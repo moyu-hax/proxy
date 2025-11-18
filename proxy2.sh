@@ -271,7 +271,7 @@ while true; do
       clear
       echo -e "${purple}▶ 节点搭建脚本合集${re}"
       echo -e "${green}---------------------------------------------------------${re}"
-      echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
+      echo -e "${cyan} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
       echo -e "${cyan} 3. Tuic-V5一键脚本${re}" # 新增Tuic选项
       echo -e "${yellow}---------------------------------------------------------${re}"
       echo -e "${skyblue} 0. 退出脚本${re}" # 优化：主菜单的0通常是退出
