@@ -1,17 +1,3 @@
-好的，我将把你的Tuic-V5脚本集成到主菜单的第三个选项中，并进行以下修改：
-
-1.  **移除作者标识**："Install Tuic-V5 by eooce" 等类似标语将被移除。
-2.  **整合包管理器**：新脚本中的 `install_packages` 函数将被移除，统一使用主脚本的 `install_soft` 函数来检查和安装 `jq`, `curl`, `openssl`, `wget` 等工具。
-3.  **遵循主脚本风格**：
-    *   保留主脚本的颜色定义和 `press_any_key_to_continue` 函数。
-    *   将Tuic的安装、配置和卸载逻辑封装在独立的函数中，并在主脚本的循环中调用。
-    *   移除Tuic脚本中不必要的 `exit 0`，改为 `break` 或 `press_any_key_to_continue && break` 以返回菜单。
-    *   移除Tuic脚本中重复的 `#!/bin/bash` 和颜色定义。
-    *   调整Tuic脚本中的颜色输出，使用主脚本的颜色变量。
-4.  **Tuic子菜单**：为Tuic功能创建一个子菜单，包含安装、更改配置、卸载和返回上一级。
-5.  **端口占用检测**：Tuic安装时也应加入端口占用检测机制。
-
-```bash
 #!/bin/bash
 
 # --- 颜色定义 (问题 1 修正) ---
@@ -538,4 +524,3 @@ while true; do
         ;;
     esac
 done
-```
