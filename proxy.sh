@@ -40,8 +40,6 @@ check_port() {
     fi
 
     # 使用 netstat 检测 TCP 和 UDP
-    # grep -q 返回 0 表示找到了 (被占用)，返回 1 表示没找到 (空闲)
-    # 使用 ":$port " (带空格) 或 ":$port$" (行尾) 来确保精确匹配端口号，避免匹配到类似 8080 中的 80
     if netstat -tuln | grep -qE ":$port\b"; then
         return 0 # 返回 0 代表被占用
     else
@@ -117,7 +115,7 @@ install_tuic() {
     read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
     [ -z "$port" ] && port=$(shuf -i 10000-65000 -n 1)
 
-    # 循环检查端口是否被占用 (改为统一函数)
+    # 循环检查端口是否被占用
     while check_port "$port"; do
         echo -e "${red}端口 ${port} 已被占用，请更换端口重试！${re}"
         read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
@@ -164,8 +162,15 @@ install_tuic() {
 }
 EOL
 
-    # 创建 systemd 服务
-    cat > /etc/systemd/system/tuic.service <<EOL
+    # --- 针对 Alpine 和 Systemd 的不同启动逻辑 ---
+    if [ -f "/etc/alpine-release" ]; then
+        # Alpine 系统使用 nohup 后台运行
+        echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
+        nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
+        echo -e "${green}Tuic 已在后台启动。${re}"
+    else
+        # 其他系统 (Debian/Ubuntu/CentOS) 使用 Systemd
+        cat > /etc/systemd/system/tuic.service <<EOL
 [Unit]
 Description=tuic service
 Documentation=TUIC v5
@@ -184,12 +189,11 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOL
-
-    # 重新加载 systemd, 启用并启动 tuic
-    systemctl daemon-reload
-    systemctl enable tuic > /dev/null 2>&1
-    systemctl start tuic
-    systemctl restart tuic
+        systemctl daemon-reload
+        systemctl enable tuic > /dev/null 2>&1
+        systemctl start tuic
+        systemctl restart tuic
+    fi
 
     # 获取公共 IP
     public_ip=$(curl -s https://api.ipify.org)
@@ -205,8 +209,8 @@ EOL
 }
 
 change_tuic_config() {
-    install_soft jq # 确保 jq 已安装
-    install_soft net-tools # 确保 netstat 可用
+    install_soft jq
+    install_soft net-tools
 
     echo -e "${yellow}正在更改 Tuic 配置...${re}"
 
@@ -236,7 +240,7 @@ change_tuic_config() {
     read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口，当前: '$current_port'): \033[0m' new_port
     [ -z "$new_port" ] && new_port=$(shuf -i 10000-65000 -n 1)
 
-    # 检测端口占用 (改为统一函数)
+    # 检测端口占用
     while check_port "$new_port"; do
         echo -e "${red}端口 ${new_port} 已被占用，请更换端口重试！${re}"
         read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口): \033[0m' new_port
@@ -246,9 +250,16 @@ change_tuic_config() {
     sed -i "s/\"\[::\]:[0-9]\+\"/\"\[::\]:$new_port\"/" "$config_file"
     echo -e "${green}新的 PORT: $new_port${re}"
 
-    # 重启服务
-    systemctl daemon-reload
-    systemctl restart tuic
+    # --- 重启服务 (兼容 Alpine) ---
+    if [ -f "/etc/alpine-release" ]; then
+        echo -e "${yellow}正在重启 Tuic (Alpine)...${re}"
+        pkill -f tuic-server > /dev/null 2>&1
+        sleep 1
+        nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
+    else
+        systemctl daemon-reload
+        systemctl restart tuic
+    fi
     echo -e "${green}Tuic 配置已更新并服务已重启。${re}"
 
     # 重新获取公共 IP 和 ISP
@@ -263,12 +274,18 @@ change_tuic_config() {
 
 uninstall_tuic() {
     echo -e "${yellow}正在卸载 Tuic V5...${re}"
-    systemctl stop tuic > /dev/null 2>&1
-    pkill -f tuic-server > /dev/null 2>&1
-    systemctl disable tuic > /dev/null 2>&1
-    rm -f /etc/systemd/system/tuic.service
+    
+    # --- 停止服务 (兼容 Alpine) ---
+    if [ -f "/etc/alpine-release" ]; then
+        pkill -f tuic-server > /dev/null 2>&1
+    else
+        systemctl stop tuic > /dev/null 2>&1
+        systemctl disable tuic > /dev/null 2>&1
+        rm -f /etc/systemd/system/tuic.service
+        systemctl daemon-reload
+    fi
+    
     rm -rf /root/tuic
-    systemctl daemon-reload
     echo -e "${green}Tuic V5 已卸载成功！${re}"
     press_any_key_to_continue
 }
@@ -293,7 +310,7 @@ while true; do
       echo -e "${purple}▶ 节点搭建脚本合集${re}"
       echo -e "${green}---------------------------------------------------------${re}"
       echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-      echo -e "${white} 3. Tuic-V5一键脚本${re}"
+      echo -e "${cyan} 3. Tuic-V5一键脚本${re}"
       echo -e "${yellow}---------------------------------------------------------${re}"
       echo -e "${skyblue} 0. 退出脚本${re}"
       echo "---------------"
@@ -313,14 +330,13 @@ while true; do
             case $sub_choice in
                 1) # 安装Hysteria2
                     clear
-                    install_soft net-tools # 确保 netstat 可用
+                    install_soft net-tools
                     read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                     if [[ -z "$port" ]]; then
                         port=$(shuf -i 2000-65000 -n 1)
                         echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                     fi
 
-                    # 使用 netstat 检测 (调用 check_port)
                     while check_port "$port"; do
                         echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车将使用随机端口）：\033[0m' port
@@ -361,7 +377,6 @@ while true; do
                     read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                     [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
 
-                    # 使用 netstat 检测
                     while check_port "$new_port"; do
                         echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
@@ -405,14 +420,13 @@ while true; do
             case $sub_choice in
                 1) # 安装Reality
                     clear
-                    install_soft net-tools # 替换 lsof 为 net-tools
+                    install_soft net-tools
                     read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                     if [[ -z "$port" ]]; then
                         port=$(shuf -i 2000-65000 -n 1)
                         echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                     fi
 
-                    # 使用 netstat 检测
                     while check_port "$port"; do
                         echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
@@ -453,11 +467,10 @@ while true; do
                 3) # 更换Reality端口
                     clear
                     install_soft jq
-                    install_soft net-tools # 替换 lsof
+                    install_soft net-tools
                     read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                     [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
 
-                    # 使用 netstat 检测
                     while check_port "$new_port"; do
                         echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
