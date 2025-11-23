@@ -54,21 +54,29 @@ press_any_key_to_continue() {
     echo ""
 }
 
-# 检测服务器架构
+# --- 关键修复：检测架构并适配 Alpine (musl) ---
 detect_arch() {
     local arch=$(uname -m)
+    local libc_type="gnu"
+
+    # 如果是 Alpine，必须使用 musl 版本
+    if [ -f "/etc/alpine-release" ]; then
+        libc_type="musl"
+    fi
+
     case $arch in
         x86_64)
-            echo "x86_64-unknown-linux-gnu"
+            echo "x86_64-unknown-linux-$libc_type"
             ;;
+        aarch64)
+            echo "aarch64-unknown-linux-$libc_type"
+            ;;
+        # 其他架构暂无 musl 预编译支持，回退到 gnu 或报错
         i686)
             echo "i686-unknown-linux-gnu"
             ;;
         armv7l)
             echo "armv7-unknown-linux-gnueabi"
-            ;;
-        aarch64)
-            echo "aarch64-unknown-linux-gnu"
             ;;
         *)
             echo -e "${red}不支持的架构: $arch${re}"
@@ -100,14 +108,29 @@ install_tuic() {
     # 下载二进制文件
     mkdir -p /root/tuic
     cd /root/tuic || exit 1
-    echo -e "${yellow}正在下载 Tuic 二进制文件...${re}"
+    
+    # 关键修复：先删除旧文件，确保下载的是新的
+    rm -f tuic-server
+
+    echo -e "${yellow}正在下载 Tuic 二进制文件 ($server_arch)...${re}"
     wget -O tuic-server -q "$download_url"
+    
+    # 检查下载是否成功
     if [[ $? -ne 0 ]]; then
-        echo -e "${red}错误: 下载 tuic 二进制文件失败！${re}"
+        echo -e "${red}错误: 下载 tuic 二进制文件失败！请检查网络或架构支持。${re}"
         cd ~
         press_any_key_to_continue
         return
     fi
+    
+    # 检查文件是否存在且非空
+    if [ ! -s "tuic-server" ]; then
+         echo -e "${red}错误: 下载的文件为空。${re}"
+         cd ~
+         press_any_key_to_continue
+         return
+    fi
+
     chmod 755 tuic-server
 
     # 生成自签名证书
@@ -172,6 +195,7 @@ EOL
     if [ -f "/etc/alpine-release" ]; then
         # Alpine 系统使用 nohup 后台运行
         echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
+        # 确保使用绝对路径
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
         echo -e "${green}Tuic 已在后台启动。${re}"
     else
@@ -319,7 +343,6 @@ while true; do
     echo -e "${purple}▶ 节点搭建脚本合集${re}"
     echo -e "${green}---------------------------------------------------------${re}"
     echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-    # 这里确认包含 Tuic 选项
     echo -e "${white} 3. Tuic-V5一键脚本${re}"
     echo -e "${yellow}---------------------------------------------------------${re}"
     echo -e "${skyblue} 0. 退出脚本${re}"
@@ -524,51 +547,6 @@ while true; do
                         fi
                         echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
                         press_any_key_to_continue
-                        break
-                        ;;
-                    0)
-                        break
-                        ;;
-                    *)
-                        echo -e "${red}无效的输入!${re}"
-                        sleep 1
-                        ;;
-                esac
-            done
-            ;;
-        3) # Tuic-V5 子菜单 (这里就是你要确认的 Tuic 逻辑)
-            while true; do
-                clear
-                echo "--------------"
-                echo -e "${green}1. 安装或重新安装 Tuic-V5${re}"
-                echo -e "${yellow}2. 更改 Tuic-V5 配置 (UUID/端口)${re}"
-                echo -e "${red}3. 卸载 Tuic-V5${re}"
-                echo "--------------"
-                echo -e "${skyblue}0. 返回上一级菜单${re}"
-                echo "--------------"
-                read -p $'\033[1;91m请输入你的选择: \033[0m' tuic_sub_choice
-                case $tuic_sub_choice in
-                    1)
-                        if [ -d "/root/tuic" ]; then
-                            echo -e "${yellow}检测到 Tuic 已安装.${re}"
-                            read -p $'\033[1;35m您想重新安装吗? (y/N): \033[0m' reinstall_confirm
-                            if [[ "$reinstall_confirm" =~ ^[Yy]$ ]]; then
-                                uninstall_tuic
-                                install_tuic
-                            else
-                                echo -e "${yellow}取消重新安装.${re}"
-                            fi
-                        else
-                            install_tuic
-                        fi
-                        break
-                        ;;
-                    2)
-                        change_tuic_config
-                        break
-                        ;;
-                    3)
-                        uninstall_tuic
                         break
                         ;;
                     0)
