@@ -6,7 +6,7 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 purple='\033[0;35m'
 skyblue='\033[0;36m'
-white='\033[1;91m'
+white='\033[1;91m' # 修改：用户指定为亮红色 (1;91m)
 re='\033[0m' # 重置颜色
 
 # --- 辅助函数 ---
@@ -322,6 +322,7 @@ while true; do
       echo -e "${purple}▶ 节点搭建脚本合集${re}"
       echo -e "${green}---------------------------------------------------------${re}"
       echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
+      # 修改：使用用户指定的亮红色变量 white
       echo -e "${white} 3. Tuic-V5一键脚本${re}"
       echo -e "${yellow}---------------------------------------------------------${re}"
       echo -e "${skyblue} 0. 退出脚本${re}"
@@ -402,6 +403,12 @@ while true; do
                     done
 
                     if [ -f "/etc/alpine-release" ]; then
+                         # 增加检查，防止未安装修改
+                        if [ ! -f "/root/config.yaml" ]; then
+                            echo -e "${red}错误: 找不到配置文件 /root/config.yaml，请先安装 Hysteria2。${re}"
+                            press_any_key_to_continue
+                            break
+                        fi
                         sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
                         pkill -f 'web'
                         nohup ./web server config.yaml >/dev/null 2>&1 &
@@ -485,98 +492,3 @@ while true; do
                     fi
                     press_any_key_to_continue
                     break
-                    ;;
-                3) # 更换Reality端口
-                    clear
-                    cd ~
-                    install_soft jq
-                    install_soft net-tools
-                    read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
-                    [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-
-                    while check_port "$new_port"; do
-                        echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
-                        read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
-                        [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-                    done
-
-                    if [ -f "/etc/alpine-release" ]; then
-                        jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
-                        pkill -f 'web'
-                        cd ~/app
-                        nohup ./web -c config.json >/dev/null 2>&1 &
-                    else
-                        clear
-                        jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
-                        systemctl restart xray.service
-                    fi
-                    echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
-                    press_any_key_to_continue
-                    break
-                    ;;
-                0)
-                    break
-                    ;;
-                *)
-                    echo -e "${red}无效的输入!${re}"
-                    sleep 1
-                    ;;
-            esac
-        done
-        ;;
-      3) # Tuic-V5 子菜单
-        while true; do
-            clear
-            echo "--------------"
-            echo -e "${green}1. 安装或重新安装 Tuic-V5${re}"
-            echo -e "${yellow}2. 更改 Tuic-V5 配置 (UUID/端口)${re}"
-            echo -e "${red}3. 卸载 Tuic-V5${re}"
-            echo "--------------"
-            echo -e "${skyblue}0. 返回上一级菜单${re}"
-            echo "--------------"
-            read -p $'\033[1;91m请输入你的选择: \033[0m' tuic_sub_choice
-            case $tuic_sub_choice in
-                1)
-                    # 检查是否已安装，如果已安装则提供重新安装选项
-                    if [ -d "/root/tuic" ]; then
-                        echo -e "${yellow}检测到 Tuic 已安装.${re}"
-                        read -p $'\033[1;35m您想重新安装吗? (y/N): \033[0m' reinstall_confirm
-                        if [[ "$reinstall_confirm" =~ ^[Yy]$ ]]; then
-                            uninstall_tuic # 先卸载
-                            install_tuic   # 再安装
-                        else
-                            echo -e "${yellow}取消重新安装.${re}"
-                        fi
-                    else
-                        install_tuic
-                    fi
-                    break
-                    ;;
-                2)
-                    change_tuic_config
-                    break
-                    ;;
-                3)
-                    uninstall_tuic
-                    break
-                    ;;
-                0)
-                    break
-                    ;;
-                *)
-                    echo -e "${red}无效的输入!${re}"
-                    sleep 1
-                    ;;
-            esac
-        done
-        ;;
-      0)
-        echo "退出脚本。"
-        exit 0
-        ;;
-      *)
-        echo -e "${red}无效的输入!${re}"
-        sleep 1
-        ;;
-    esac
-done
