@@ -79,6 +79,9 @@ detect_arch() {
 # --- Tuic-V5 功能实现 ---
 
 install_tuic() {
+    # 强制回到 root 目录，防止当前目录被删导致报错
+    cd ~
+
     install_soft jq
     install_soft curl
     install_soft openssl
@@ -100,6 +103,7 @@ install_tuic() {
     wget -O tuic-server -q "$download_url"
     if [[ $? -ne 0 ]]; then
         echo -e "${red}错误: 下载 tuic 二进制文件失败！${re}"
+        cd ~ # 失败后回到主目录
         press_any_key_to_continue
         return
     fi
@@ -134,6 +138,7 @@ install_tuic() {
 
     if [ -z "$UUID" ]; then
         echo -e "${red}错误: 生成 UUID 失败！${re}"
+        cd ~
         press_any_key_to_continue
         return
     fi
@@ -166,6 +171,7 @@ EOL
     if [ -f "/etc/alpine-release" ]; then
         # Alpine 系统使用 nohup 后台运行
         echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
+        # 必须在后台运行，且不要占用当前终端
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
         echo -e "${green}Tuic 已在后台启动。${re}"
     else
@@ -205,10 +211,12 @@ EOL
     echo -e "${white}V2rayN、NekoBox 客户端配置链接: ${re}"
     echo -e "${skyblue}tuic://$UUID:$password@$public_ip:$port?congestion_control=bbr&alpn=h3&sni=www.bing.com&udp_relay_mode=native&allow_insecure=1#$isp${re}"
     echo ""
+    cd ~ # 安装完成后回到主目录
     press_any_key_to_continue
 }
 
 change_tuic_config() {
+    cd ~ # 确保在主目录
     install_soft jq
     install_soft net-tools
 
@@ -273,6 +281,8 @@ change_tuic_config() {
 }
 
 uninstall_tuic() {
+    # 关键修复：先回到 home，否则删了目录后脚本会因为找不到当前路径而报错
+    cd ~ 
     echo -e "${yellow}正在卸载 Tuic V5...${re}"
     
     # --- 停止服务 (兼容 Alpine) ---
@@ -306,11 +316,13 @@ fi
 
 # --- 主菜单 ---
 while true; do
+    # 确保主菜单开始前也在安全目录
+      cd ~ 
       clear
       echo -e "${purple}▶ 节点搭建脚本合集${re}"
       echo -e "${green}---------------------------------------------------------${re}"
-      echo -e "${cyan} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-      echo -e "${cyan} 3. Tuic-V5一键脚本${re}"
+      echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
+      echo -e "${white} 3. Tuic-V5一键脚本${re}"
       echo -e "${yellow}---------------------------------------------------------${re}"
       echo -e "${skyblue} 0. 退出脚本${re}"
       echo "---------------"
@@ -330,6 +342,7 @@ while true; do
             case $sub_choice in
                 1) # 安装Hysteria2
                     clear
+                    cd ~ # 确保目录
                     install_soft net-tools
                     read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                     if [[ -z "$port" ]]; then
@@ -347,6 +360,8 @@ while true; do
                     done
 
                     if [ -f "/etc/alpine-release" ]; then
+                        # 修复：执行前先回到 home，避免在已删除目录执行报错
+                        cd ~
                         SERVER_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/containers-shell/hy2.sh)"
                     else
                         HY2_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/Hysteria2.sh)"
@@ -355,9 +370,11 @@ while true; do
                     break
                     ;;
                 2) # 卸载Hysteria2
+                    cd ~ # 关键修复
                     if [ -f "/etc/alpine-release" ]; then
                         pkill -f 'web'
-                        cd && rm -rf web npm server.crt server.key config.yaml
+                        # 因为前面 cd ~ 了，这里直接 rm -rf web 即可 (假设安装在 ~ 下)
+                        rm -rf web npm server.crt server.key config.yaml
                         echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
                     else
                         systemctl stop hysteria-server.service
@@ -373,6 +390,7 @@ while true; do
                     ;;
                 3) # 更换Hysteria2端口
                     clear
+                    cd ~
                     install_soft net-tools
                     read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                     [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
@@ -420,6 +438,7 @@ while true; do
             case $sub_choice in
                 1) # 安装Reality
                     clear
+                    cd ~ # 确保目录
                     install_soft net-tools
                     read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                     if [[ -z "$port" ]]; then
@@ -437,6 +456,8 @@ while true; do
                     done
 
                     if [ -f "/etc/alpine-release" ]; then
+                        # 关键修复：确保在 curl 之前回到 home，否则 mkdir 会失败
+                        cd ~ 
                         PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
                     else
                         PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
@@ -445,9 +466,10 @@ while true; do
                     break
                     ;;
                 2) # 卸载Reality
+                    cd ~ # 关键修复
                     if [ -f "/etc/alpine-release" ]; then
                         pkill -f 'web'
-                        cd && rm -rf app
+                        rm -rf app
                         echo -e "${green}Reality (Alpine) 已卸载${re}"
                     else
                         systemctl stop xray
@@ -466,6 +488,7 @@ while true; do
                     ;;
                 3) # 更换Reality端口
                     clear
+                    cd ~
                     install_soft jq
                     install_soft net-tools
                     read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
