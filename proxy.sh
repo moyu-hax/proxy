@@ -6,7 +6,7 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 purple='\033[0;35m'
 skyblue='\033[0;36m'
-white='\033[1;91m' 
+white='\033[1;91m' # 亮红色
 re='\033[0m' # 重置颜色
 
 # --- 辅助函数 ---
@@ -368,8 +368,8 @@ while true; do
                     2) # 卸载Hysteria2
                         cd ~
                         if [ -f "/etc/alpine-release" ]; then
-                            # 修复：只杀 /root/web，不杀 reality 的
-                            pkill -f '/root/web'
+                            # 修复：使用更精确的匹配，确保只杀 config.yaml (Hy2)
+                            pkill -f "server config.yaml"
                             rm -rf web npm server.crt server.key config.yaml
                             echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
                         else
@@ -404,8 +404,8 @@ while true; do
                                 break
                             fi
                             sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
-                            # 修复：精确查杀 /root/web
-                            pkill -f '/root/web'
+                            # 修复：重启 Hy2，使用精确匹配
+                            pkill -f "server config.yaml"
                             nohup ./web server config.yaml >/dev/null 2>&1 &
                         else
                             clear
@@ -440,57 +440,3 @@ while true; do
                 case $sub_choice in
                     1) # 安装Reality
                         clear
-                        cd ~
-                        install_soft net-tools
-                        read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
-                        if [[ -z "$port" ]]; then
-                            port=$(shuf -i 2000-65000 -n 1)
-                            echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
-                        fi
-
-                        while check_port "$port"; do
-                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
-                            read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
-                            if [[ -z "$port" ]]; then
-                                port=$(shuf -i 2000-65000 -n 1)
-                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
-                            fi
-                        done
-
-                        if [ -f "/etc/alpine-release" ]; then
-                            cd ~
-                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
-                        else
-                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
-                        fi
-                        press_any_key_to_continue
-                        break
-                        ;;
-                    2) # 卸载Reality
-                        cd ~
-                        if [ -f "/etc/alpine-release" ]; then
-                            # 修复：只杀 /root/app/web，避免误杀 hy2
-                            pkill -f '/root/app/web'
-                            rm -rf app
-                            echo -e "${green}Reality (Alpine) 已卸载${re}"
-                        else
-                            systemctl stop xray
-                            systemctl disable xray
-                            rm -f /usr/local/bin/xray
-                            rm -f /etc/systemd/system/xray.service
-                            rm -f /etc/systemd/system/xray@.service
-                            rm -rf /usr/local/etc/xray
-                            rm -rf /usr/local/share/xray
-                            rm -rf /var/log/xray /var/lib/xray
-                            systemctl daemon-reload
-                            echo -e "${green}Reality (Systemd) 已卸载${re}"
-                        fi
-                        press_any_key_to_continue
-                        break
-                        ;;
-                    3) # 更换Reality端口
-                        clear
-                        cd ~
-                        install_soft jq
-                        install_soft net-tools
-                        re
