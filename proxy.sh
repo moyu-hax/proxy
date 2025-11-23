@@ -59,7 +59,7 @@ detect_arch() {
     local arch=$(uname -m)
     local libc_type="gnu"
 
-    # 如果是 Alpine，必须使用 musl 版本，否则运行 Tuic 会报 No such file
+    # 如果是 Alpine，必须使用 musl 版本
     if [ -f "/etc/alpine-release" ]; then
         libc_type="musl"
     fi
@@ -71,7 +71,6 @@ detect_arch() {
         aarch64)
             echo "aarch64-unknown-linux-$libc_type"
             ;;
-        # 其他架构 Tuic 官方可能未提供预编译 musl 版本
         i686)
             echo "i686-unknown-linux-gnu"
             ;;
@@ -88,9 +87,7 @@ detect_arch() {
 # --- Tuic-V5 功能实现 ---
 
 install_tuic() {
-    # 强制回到 root 目录
     cd ~ || exit 1
-
     install_soft jq
     install_soft curl
     install_soft openssl
@@ -101,29 +98,22 @@ install_tuic() {
 
     server_arch=$(detect_arch)
     latest_release_version=$(curl -s "https://api.github.com/repos/etjec4/tuic/releases/latest" | jq -r ".tag_name")
-
-    # 构建下载URL
     download_url="https://github.com/etjec4/tuic/releases/download/$latest_release_version/$latest_release_version-$server_arch"
 
-    # 下载二进制文件
     mkdir -p /root/tuic
     cd /root/tuic || exit 1
-    
-    # 关键修复：先删除旧文件，确保下载的是新的架构文件
     rm -f tuic-server
 
     echo -e "${yellow}正在下载 Tuic 二进制文件 ($server_arch)...${re}"
     wget -O tuic-server -q "$download_url"
     
-    # 检查下载是否成功
     if [[ $? -ne 0 ]]; then
-        echo -e "${red}错误: 下载 tuic 二进制文件失败！可能是网络问题或该架构无 musl 版本。${re}"
+        echo -e "${red}错误: 下载失败！可能是网络问题或该架构无 musl 版本。${re}"
         cd ~
         press_any_key_to_continue
         return
     fi
     
-    # 检查文件是否存在且非空
     if [ ! -s "tuic-server" ]; then
          echo -e "${red}错误: 下载的文件为空。${re}"
          cd ~
@@ -133,17 +123,14 @@ install_tuic() {
 
     chmod 755 tuic-server
 
-    # 生成自签名证书
     echo -e "${yellow}正在生成自签名证书...${re}"
     openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) -keyout /root/tuic/server.key -out /root/tuic/server.crt -subj "/CN=bing.com" -days 36500
 
-    # 提示用户输入端口和密码
     echo ""
     local port
     read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
     [ -z "$port" ] && port=$(shuf -i 10000-65000 -n 1)
 
-    # 循环检查端口是否被占用
     while check_port "$port"; do
         echo -e "${red}端口 ${port} 已被占用，请更换端口重试！${re}"
         read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
@@ -156,7 +143,6 @@ install_tuic() {
     [ -z "$password" ] && password=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
     echo -e "${green}Tuic 密码: ${password}${re}"
 
-    # 生成 UUID
     UUID=$(openssl rand -hex 16 | awk '{print substr($0,1,8)"-"substr($0,9,4)"-"substr($0,13,4)"-"substr($0,17,4)"-"substr($0,21,12)}')
     echo -e "${green}Tuic UUID: ${UUID}${re}"
 
@@ -167,7 +153,6 @@ install_tuic() {
         return
     fi
 
-    # 创建 config.json
     cat > config.json <<EOL
 {
   "server": "[::]:$port",
@@ -191,15 +176,11 @@ install_tuic() {
 }
 EOL
 
-    # --- 针对 Alpine 和 Systemd 的不同启动逻辑 ---
     if [ -f "/etc/alpine-release" ]; then
-        # Alpine 系统使用 nohup 后台运行
         echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
-        # 确保使用绝对路径
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
         echo -e "${green}Tuic 已在后台启动。${re}"
     else
-        # 其他系统 使用 Systemd
         cat > /etc/systemd/system/tuic.service <<EOL
 [Unit]
 Description=tuic service
@@ -225,10 +206,7 @@ EOL
         systemctl restart tuic
     fi
 
-    # 获取公共 IP
     public_ip=$(curl -s https://api.ipify.org)
-
-    # 获取 ISP 信息
     isp=$(curl -s https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g')
 
     echo -e "${green}Tuic V5 安装成功！配置信息如下：${re}"
@@ -245,44 +223,38 @@ change_tuic_config() {
     install_soft net-tools
 
     echo -e "${yellow}正在更改 Tuic 配置...${re}"
-
     local config_file="/root/tuic/config.json"
     if [ ! -f "$config_file" ]; then
-        echo -e "${red}错误: Tuic 配置文件 $config_file 不存在，请先安装 Tuic.${re}"
+        echo -e "${red}错误: Tuic 配置文件 $config_file 不存在。${re}"
         press_any_key_to_continue
         return
     fi
 
-    # 获取当前UUID和密码
     local current_uuid=$(jq -r '.users | to_entries[0].key' "$config_file" 2>/dev/null)
     local current_password=$(jq -r ".users[\"$current_uuid\"]" "$config_file" 2>/dev/null)
     local current_port=$(jq -r '.server' "$config_file" | awk -F":" '{print $NF}' | tr -d '"')
 
-    # 更改 UUID
     local new_uuid
-    read -p $'\033[1;35m请输入新的 UUID (或回车使用随机 UUID，当前: '$current_uuid'): \033[0m' new_uuid
+    read -p $'\033[1;35m请输入新的 UUID (或回车随机): \033[0m' new_uuid
     [ -z "$new_uuid" ] && new_uuid=$(openssl rand -hex 16 | awk '{print substr($0,1,8)"-"substr($0,9,4)"-"substr($0,13,4)"-"substr($0,17,4)"-"substr($0,21,12)}')
 
     jq --arg old_uuid "$current_uuid" --arg new_uuid "$new_uuid" --arg password "$current_password" \
         '.users = { ($new_uuid): $password }' "$config_file" > temp.json && mv temp.json "$config_file"
     echo -e "${green}新的 UUID: $new_uuid${re}"
 
-    # 更改端口
     local new_port
-    read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口，当前: '$current_port'): \033[0m' new_port
+    read -p $'\033[1;35m请输入新的端口 (或回车随机): \033[0m' new_port
     [ -z "$new_port" ] && new_port=$(shuf -i 10000-65000 -n 1)
 
-    # 检测端口占用
     while check_port "$new_port"; do
         echo -e "${red}端口 ${new_port} 已被占用，请更换端口重试！${re}"
-        read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口): \033[0m' new_port
+        read -p $'\033[1;35m请输入新的端口: \033[0m' new_port
         [ -z "$new_port" ] && new_port=$(shuf -i 10000-65000 -n 1)
     done
 
     sed -i "s/\"\[::\]:[0-9]\+\"/\"\[::\]:$new_port\"/" "$config_file"
     echo -e "${green}新的 PORT: $new_port${re}"
 
-    # --- 重启服务 ---
     if [ -f "/etc/alpine-release" ]; then
         echo -e "${yellow}正在重启 Tuic (Alpine)...${re}"
         pkill -f tuic-server > /dev/null 2>&1
@@ -292,12 +264,10 @@ change_tuic_config() {
         systemctl daemon-reload
         systemctl restart tuic
     fi
-    echo -e "${green}Tuic 配置已更新并服务已重启。${re}"
+    echo -e "${green}Tuic 配置已更新。${re}"
 
-    # 重新获取公共 IP 和 ISP
     public_ip=$(curl -s https://api.ipify.org)
     isp=$(curl -s https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' | sed -e 's/ /_/g')
-
     echo -e "${white}更新后的客户端配置链接: ${re}"
     echo -e "${skyblue}tuic://$new_uuid:$current_password@$public_ip:$new_port?congestion_control=bbr&alpn=h3&sni=www.bing.com&udp_relay_mode=native&allow_insecure=1#$isp${re}"
     echo ""
@@ -307,7 +277,6 @@ change_tuic_config() {
 uninstall_tuic() {
     cd ~ || exit 1
     echo -e "${yellow}正在卸载 Tuic V5...${re}"
-    
     if [ -f "/etc/alpine-release" ]; then
         pkill -f tuic-server > /dev/null 2>&1
     else
@@ -316,7 +285,6 @@ uninstall_tuic() {
         rm -f /etc/systemd/system/tuic.service
         systemctl daemon-reload
     fi
-    
     rm -rf /root/tuic
     echo -e "${green}Tuic V5 已卸载成功！${re}"
     press_any_key_to_continue
@@ -343,7 +311,6 @@ while true; do
     echo -e "${purple}▶ 节点搭建脚本合集${re}"
     echo -e "${green}---------------------------------------------------------${re}"
     echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-    # 确认 Tuic 选项存在且使用红色高亮
     echo -e "${white} 3. Tuic-V5一键脚本${re}"
     echo -e "${yellow}---------------------------------------------------------${re}"
     echo -e "${skyblue} 0. 退出脚本${re}"
@@ -366,21 +333,18 @@ while true; do
                         clear
                         cd ~
                         install_soft net-tools
-                        read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
+                        read -p $'\033[1;35m请输入Hysteria2节点端口(回车随机)：\033[0m' port
                         if [[ -z "$port" ]]; then
                             port=$(shuf -i 2000-65000 -n 1)
-                            echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                            echo -e "${yellow}未输入，随机分配: $port${re}"
                         fi
-
                         while check_port "$port"; do
-                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
-                            read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车将使用随机端口）：\033[0m' port
+                            echo -e "${red}${port}端口被占用，请更换${re}"
+                            read -p $'\033[1;35m设置Hysteria2端口：\033[0m' port
                             if [[ -z "$port" ]]; then
                                 port=$(shuf -i 2000-65000 -n 1)
-                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                             fi
                         done
-
                         if [ -f "/etc/alpine-release" ]; then
                             cd ~
                             SERVER_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/containers-shell/hy2.sh)"
@@ -393,7 +357,6 @@ while true; do
                     2) # 卸载Hysteria2
                         cd ~
                         if [ -f "/etc/alpine-release" ]; then
-                            # 修复：只杀带 config.yaml 的 web 进程
                             pkill -f "server config.yaml"
                             rm -rf web npm server.crt server.key config.yaml
                             echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
@@ -413,23 +376,20 @@ while true; do
                         clear
                         cd ~
                         install_soft net-tools
-                        read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                        read -p $'\033[1;35m设置Hysteria2端口(回车随机)：\033[0m' new_port
                         [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-
                         while check_port "$new_port"; do
-                            echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
-                            read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                            echo -e "${red}${new_port}端口被占用${re}"
+                            read -p $'\033[1;35m设置Hysteria2端口：\033[0m' new_port
                             [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
                         done
-
                         if [ -f "/etc/alpine-release" ]; then
                             if [ ! -f "/root/config.yaml" ]; then
-                                echo -e "${red}错误: 找不到配置文件 /root/config.yaml，请先安装 Hysteria2。${re}"
+                                echo -e "${red}错误: 找不到 config.yaml${re}"
                                 press_any_key_to_continue
                                 break
                             fi
                             sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
-                            # 修复：重启 Hy2，使用精确匹配
                             pkill -f "server config.yaml"
                             nohup ./web server config.yaml >/dev/null 2>&1 &
                         else
@@ -437,7 +397,7 @@ while true; do
                             sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /etc/hysteria/config.yaml
                             systemctl restart hysteria-server.service
                         fi
-                        echo -e "${green}Hysteria2端口已更换成$new_port,请手动更改客户端配置!${re}"
+                        echo -e "${green}Hysteria2端口已更换为$new_port${re}"
                         press_any_key_to_continue
                         break
                         ;;
@@ -467,26 +427,48 @@ while true; do
                         clear
                         cd ~
                         install_soft net-tools
-                        read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
+                        read -p $'\033[1;35m请输入reality节点端口(回车随机)：\033[0m' port
                         if [[ -z "$port" ]]; then
                             port=$(shuf -i 2000-65000 -n 1)
-                            echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                            echo -e "${yellow}未输入，随机分配: $port${re}"
                         fi
-
                         while check_port "$port"; do
-                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
-                            read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
+                            echo -e "${red}${port}端口被占用${re}"
+                            read -p $'\033[1;35m设置 reality 端口：\033[0m' port
                             if [[ -z "$port" ]]; then
                                 port=$(shuf -i 2000-65000 -n 1)
-                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                             fi
                         done
 
                         if [ -f "/etc/alpine-release" ]; then
+                            # 安装 Reality
                             cd ~
                             PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
+                            
+                            # --- 自动修改 SNI 为 www.apple.com ---
+                            echo -e "${yellow}正在自动修正 SNI 为 www.apple.com (防阻断)...${re}"
+                            if [ -f "/root/app/config.json" ]; then
+                                install_soft jq
+                                jq '.inbounds[0].streamSettings.realitySettings.serverNames = ["www.apple.com"]' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
+                                
+                                # 重启 Reality
+                                pkill -f "app/web"
+                                cd /root
+                                nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
+                                
+                                echo -e "${green}SNI 已自动修正为 www.apple.com${re}"
+                                echo -e "${white}注意：请复制屏幕上方的链接，但在客户端中务必将 SNI/Peer 改为 www.apple.com，端口改为实际端口${re}"
+                            fi
                         else
                             PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
+                            # 非 Alpine 系统的自动修正
+                             echo -e "${yellow}正在自动修正 SNI 为 www.apple.com...${re}"
+                             if [ -f "/usr/local/etc/xray/config.json" ]; then
+                                install_soft jq
+                                jq '.inbounds[0].streamSettings.realitySettings.serverNames = ["www.apple.com"]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
+                                systemctl restart xray
+                                echo -e "${green}SNI 已自动修正为 www.apple.com${re}"
+                             fi
                         fi
                         press_any_key_to_continue
                         break
@@ -494,7 +476,6 @@ while true; do
                     2) # 卸载Reality
                         cd ~
                         if [ -f "/etc/alpine-release" ]; then
-                            # 修复：根据你的截图，Reality 的特征是 "app/web"
                             pkill -f "app/web"
                             rm -rf app
                             echo -e "${green}Reality (Alpine) 已卸载${re}"
@@ -518,27 +499,22 @@ while true; do
                         cd ~
                         install_soft jq
                         install_soft net-tools
-                        read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                        read -p $'\033[1;35m设置 reality 端口(回车随机)：\033[0m' new_port
                         [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-
                         while check_port "$new_port"; do
-                            echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
-                            read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                            echo -e "${red}${new_port}端口被占用${re}"
+                            read -p $'\033[1;35m设置reality端口：\033[0m' new_port
                             [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
                         done
 
                         if [ -f "/etc/alpine-release" ]; then
                             if [ ! -f "/root/app/config.json" ]; then
-                                echo -e "${red}错误: 找不到配置文件 /root/app/config.json。请确保 Reality 已经安装成功。${re}"
+                                echo -e "${red}错误: 找不到 config.json${re}"
                                 press_any_key_to_continue
                                 break
                             fi
-                            
                             jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
-                            
-                            # 修复：重启 Reality，匹配 "app/web"
                             pkill -f "app/web"
-                            # 修复：使用绝对路径启动，确保进程名包含 "app/web"
                             cd /root
                             nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
                         else
@@ -546,7 +522,7 @@ while true; do
                             jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
                             systemctl restart xray.service
                         fi
-                        echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
+                        echo -e "${green}Reality端口已更换为$new_port${re}"
                         press_any_key_to_continue
                         break
                         ;;
@@ -560,7 +536,7 @@ while true; do
                 esac
             done
             ;;
-        3) # Tuic-V5 子菜单 (这里就是你要确认的 Tuic 逻辑)
+        3) # Tuic-V5 子菜单
             while true; do
                 clear
                 echo "--------------"
