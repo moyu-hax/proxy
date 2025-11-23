@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- 颜色定义 (问题 1 修正) ---
+# --- 颜色定义 ---
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -11,7 +11,7 @@ re='\033[0m' # 重置颜色
 
 # --- 辅助函数 ---
 
-# 检查并安装软件包 (问题 3 修正)
+# 检查并安装软件包
 install_soft() {
     if ! command -v $1 &> /dev/null; then
         echo -e "${yellow}正在安装 $1...${re}"
@@ -31,7 +31,25 @@ install_soft() {
     fi
 }
 
-# 按任意键继续 (问题 1 修正 - 实现 break_end 的功能)
+# --- 核心功能：端口占用检测 (仅使用 netstat) ---
+check_port() {
+    local port=$1
+    # 确保 netstat 已安装
+    if ! command -v netstat &> /dev/null; then
+        install_soft net-tools
+    fi
+
+    # 使用 netstat 检测 TCP 和 UDP
+    # grep -q 返回 0 表示找到了 (被占用)，返回 1 表示没找到 (空闲)
+    # 使用 ":$port " (带空格) 或 ":$port$" (行尾) 来确保精确匹配端口号，避免匹配到类似 8080 中的 80
+    if netstat -tuln | grep -qE ":$port\b"; then
+        return 0 # 返回 0 代表被占用
+    else
+        return 1 # 返回 1 代表空闲
+    fi
+}
+
+# 按任意键继续
 press_any_key_to_continue() {
     echo -e "${skyblue}---------------------------------------------------------${re}"
     read -n 1 -s -r -p "按任意键返回上一级菜单..."
@@ -67,23 +85,9 @@ install_tuic() {
     install_soft curl
     install_soft openssl
     install_soft wget
-    install_soft lsof # 端口检测需要
+    install_soft net-tools # 确保 netstat 可用
 
     echo -e "${green}Tuic V5 正在安装中，请稍候...${re}"
-
-    # 检测端口占用函数
-    check_port_occupied() {
-        if command -v lsof &> /dev/null; then
-            if lsof -i :$1 &> /dev/null; then
-                return 0 # 占用
-            fi
-        elif command -v netstat &> /dev/null; then
-            if netstat -tuln | grep -q ":$1"; then
-                return 0 # 占用
-            fi
-        fi
-        return 1 # 未占用
-    }
 
     server_arch=$(detect_arch)
     latest_release_version=$(curl -s "https://api.github.com/repos/etjec4/tuic/releases/latest" | jq -r ".tag_name")
@@ -113,8 +117,8 @@ install_tuic() {
     read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
     [ -z "$port" ] && port=$(shuf -i 10000-65000 -n 1)
 
-    # 循环检查端口是否被占用
-    while check_port_occupied "$port"; do
+    # 循环检查端口是否被占用 (改为统一函数)
+    while check_port "$port"; do
         echo -e "${red}端口 ${port} 已被占用，请更换端口重试！${re}"
         read -p $'\033[1;35m请输入 Tuic 端口 (10000-65000, 回车使用随机端口): \033[0m' port
         [ -z "$port" ] && port=$(shuf -i 10000-65000 -n 1)
@@ -202,6 +206,7 @@ EOL
 
 change_tuic_config() {
     install_soft jq # 确保 jq 已安装
+    install_soft net-tools # 确保 netstat 可用
 
     echo -e "${yellow}正在更改 Tuic 配置...${re}"
 
@@ -231,8 +236,8 @@ change_tuic_config() {
     read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口，当前: '$current_port'): \033[0m' new_port
     [ -z "$new_port" ] && new_port=$(shuf -i 10000-65000 -n 1)
 
-    # 检测端口占用
-    while check_port_occupied "$new_port"; do
+    # 检测端口占用 (改为统一函数)
+    while check_port "$new_port"; do
         echo -e "${red}端口 ${new_port} 已被占用，请更换端口重试！${re}"
         read -p $'\033[1;35m请输入新的端口 (或回车使用随机端口): \033[0m' new_port
         [ -z "$new_port" ] && new_port=$(shuf -i 10000-65000 -n 1)
@@ -268,13 +273,13 @@ uninstall_tuic() {
     press_any_key_to_continue
 }
 
-# --- Alpine 系统环境预处理 (新增功能) ---
+# --- Alpine 系统环境预处理 ---
 if [ -f "/etc/alpine-release" ]; then
-    if ! command -v bash &> /dev/null || ! command -v openssl &> /dev/null; then
-        echo -e "${yellow}检测到 Alpine 系统，正在安装基础依赖 (bash, openssl)...${re}"
+    if ! command -v bash &> /dev/null || ! command -v openssl &> /dev/null || ! command -v netstat &> /dev/null; then
+        echo -e "${yellow}检测到 Alpine 系统，正在安装基础依赖 (bash, openssl, net-tools)...${re}"
         if command -v apk &> /dev/null; then
             apk update > /dev/null 2>&1
-            apk add bash openssl > /dev/null 2>&1
+            apk add bash openssl net-tools > /dev/null 2>&1
             echo -e "${green}基础依赖安装完成。${re}"
         else
             echo -e "${red}错误: 未找到 apk 包管理器，无法自动安装依赖。${re}"
@@ -288,9 +293,9 @@ while true; do
       echo -e "${purple}▶ 节点搭建脚本合集${re}"
       echo -e "${green}---------------------------------------------------------${re}"
       echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-      echo -e "${cyan} 3. Tuic-V5一键脚本${re}" # 新增Tuic选项
+      echo -e "${white} 3. Tuic-V5一键脚本${re}"
       echo -e "${yellow}---------------------------------------------------------${re}"
-      echo -e "${skyblue} 0. 退出脚本${re}" # 优化：主菜单的0通常是退出
+      echo -e "${skyblue} 0. 退出脚本${re}"
       echo "---------------"
       read -p $'\033[1;91m请输入你的选择: \033[0m' main_choice
       case $main_choice in
@@ -308,19 +313,17 @@ while true; do
             case $sub_choice in
                 1) # 安装Hysteria2
                     clear
-                    install_soft net-tools psmisc # 确保 net-tools(netstat) 和 psmisc(fuser/killall) 可用，根据具体系统可能需要
+                    install_soft net-tools # 确保 netstat 可用
                     read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
-                    # (问题 2 修正) 如果为空，则分配随机端口
                     if [[ -z "$port" ]]; then
                         port=$(shuf -i 2000-65000 -n 1)
                         echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                     fi
 
-                    # 循环检查端口是否被占用
-                    until [[ -z $(netstat -tuln | grep -w udp | awk '{print $4}' | sed 's/.*://g' | grep -w "$port") ]]; do
+                    # 使用 netstat 检测 (调用 check_port)
+                    while check_port "$port"; do
                         echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车将使用随机端口）：\033[0m' port
-                        # (问题 2 修正) 修复逻辑，回车使用随机端口
                         if [[ -z "$port" ]]; then
                             port=$(shuf -i 2000-65000 -n 1)
                             echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
@@ -337,7 +340,7 @@ while true; do
                     ;;
                 2) # 卸载Hysteria2
                     if [ -f "/etc/alpine-release" ]; then
-                        pkill -f 'web' # 修正：匹配确切的进程名，避免误杀 'npm'
+                        pkill -f 'web'
                         cd && rm -rf web npm server.crt server.key config.yaml
                         echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
                     else
@@ -354,11 +357,12 @@ while true; do
                     ;;
                 3) # 更换Hysteria2端口
                     clear
-                    install_soft net-tools psmisc # 确保 net-tools (netstat) 和 psmisc (fuser/killall) 可用
+                    install_soft net-tools
                     read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                     [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
 
-                    until [[ -z $(netstat -tuln | grep -w udp | awk '{print $4}' | sed 's/.*://g' | grep -w "$new_port") ]]; do
+                    # 使用 netstat 检测
+                    while check_port "$new_port"; do
                         echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                         [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
@@ -366,7 +370,7 @@ while true; do
 
                     if [ -f "/etc/alpine-release" ]; then
                         sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
-                        pkill -f 'web' # 修正
+                        pkill -f 'web'
                         nohup ./web server config.yaml >/dev/null 2>&1 &
                     else
                         clear
@@ -401,15 +405,15 @@ while true; do
             case $sub_choice in
                 1) # 安装Reality
                     clear
-                    install_soft lsof # 使用通用安装函数
+                    install_soft net-tools # 替换 lsof 为 net-tools
                     read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
-                    # (问题 2 修正) 如果为空，则分配随机端口
                     if [[ -z "$port" ]]; then
                         port=$(shuf -i 2000-65000 -n 1)
                         echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                     fi
 
-                    until [[ -z $(lsof -i :$port 2>/dev/null) ]]; do
+                    # 使用 netstat 检测
+                    while check_port "$port"; do
                         echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
                         if [[ -z "$port" ]]; then
@@ -428,7 +432,7 @@ while true; do
                     ;;
                 2) # 卸载Reality
                     if [ -f "/etc/alpine-release" ]; then
-                        pkill -f 'web' # 修正
+                        pkill -f 'web'
                         cd && rm -rf app
                         echo -e "${green}Reality (Alpine) 已卸载${re}"
                     else
@@ -448,12 +452,13 @@ while true; do
                     ;;
                 3) # 更换Reality端口
                     clear
-                    install_soft jq # 使用通用安装函数
-                    install_soft lsof # 端口检测需要
+                    install_soft jq
+                    install_soft net-tools # 替换 lsof
                     read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                     [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
 
-                    until [[ -z $(lsof -i :$new_port 2>/dev/null) ]]; do
+                    # 使用 netstat 检测
+                    while check_port "$new_port"; do
                         echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
                         read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                         [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
@@ -461,7 +466,7 @@ while true; do
 
                     if [ -f "/etc/alpine-release" ]; then
                         jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
-                        pkill -f 'web' # 修正
+                        pkill -f 'web'
                         cd ~/app
                         nohup ./web -c config.json >/dev/null 2>&1 &
                     else
