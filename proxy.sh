@@ -440,3 +440,110 @@ while true; do
                 case $sub_choice in
                     1) # 安装Reality
                         clear
+                        cd ~
+                        install_soft net-tools
+                        read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
+                        if [[ -z "$port" ]]; then
+                            port=$(shuf -i 2000-65000 -n 1)
+                            echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                        fi
+
+                        while check_port "$port"; do
+                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
+                            if [[ -z "$port" ]]; then
+                                port=$(shuf -i 2000-65000 -n 1)
+                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                            fi
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            cd ~
+                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
+                        else
+                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    2) # 卸载Reality
+                        cd ~
+                        if [ -f "/etc/alpine-release" ]; then
+                            # 修复：根据你的截图，Reality 的特征是 "app/web"
+                            # 这样绝对不会杀到 Hy2 (因为它只是 "web")
+                            pkill -f "app/web"
+                            rm -rf app
+                            echo -e "${green}Reality (Alpine) 已卸载${re}"
+                        else
+                            systemctl stop xray
+                            systemctl disable xray
+                            rm -f /usr/local/bin/xray
+                            rm -f /etc/systemd/system/xray.service
+                            rm -f /etc/systemd/system/xray@.service
+                            rm -rf /usr/local/etc/xray
+                            rm -rf /usr/local/share/xray
+                            rm -rf /var/log/xray /var/lib/xray
+                            systemctl daemon-reload
+                            echo -e "${green}Reality (Systemd) 已卸载${re}"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    3) # 更换Reality端口
+                        clear
+                        cd ~
+                        install_soft jq
+                        install_soft net-tools
+                        read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                        [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
+
+                        while check_port "$new_port"; do
+                            echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                            [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            if [ ! -f "/root/app/config.json" ]; then
+                                echo -e "${red}错误: 找不到配置文件 /root/app/config.json。请确保 Reality 已经安装成功。${re}"
+                                press_any_key_to_continue
+                                break
+                            fi
+                            
+                            jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
+                            
+                            # 修复：重启 Reality，匹配 "app/web"
+                            pkill -f "app/web"
+                            # 修复：使用绝对路径启动，确保进程名包含 "app/web"
+                            # 不进入 app 目录，直接在 root 运行
+                            cd /root
+                            nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
+                        else
+                            clear
+                            jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
+                            systemctl restart xray.service
+                        fi
+                        echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "${red}无效的输入!${re}"
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+        0)
+            echo "退出脚本。"
+            exit 0
+            ;;
+        *)
+            echo -e "${red}无效的输入!${re}"
+            sleep 1
+            ;;
+    esac
+done
