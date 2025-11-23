@@ -319,6 +319,7 @@ while true; do
     echo -e "${purple}▶ 节点搭建脚本合集${re}"
     echo -e "${green}---------------------------------------------------------${re}"
     echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
+    # 这里确认包含 Tuic 选项
     echo -e "${white} 3. Tuic-V5一键脚本${re}"
     echo -e "${yellow}---------------------------------------------------------${re}"
     echo -e "${skyblue} 0. 退出脚本${re}"
@@ -368,7 +369,7 @@ while true; do
                     2) # 卸载Hysteria2
                         cd ~
                         if [ -f "/etc/alpine-release" ]; then
-                            # 修复：使用更精确的匹配，确保只杀 config.yaml (Hy2)
+                            # 修复：只杀带 config.yaml 的 web 进程
                             pkill -f "server config.yaml"
                             rm -rf web npm server.crt server.key config.yaml
                             echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
@@ -470,7 +471,6 @@ while true; do
                         cd ~
                         if [ -f "/etc/alpine-release" ]; then
                             # 修复：根据你的截图，Reality 的特征是 "app/web"
-                            # 这样绝对不会杀到 Hy2 (因为它只是 "web")
                             pkill -f "app/web"
                             rm -rf app
                             echo -e "${green}Reality (Alpine) 已卸载${re}"
@@ -515,7 +515,6 @@ while true; do
                             # 修复：重启 Reality，匹配 "app/web"
                             pkill -f "app/web"
                             # 修复：使用绝对路径启动，确保进程名包含 "app/web"
-                            # 不进入 app 目录，直接在 root 运行
                             cd /root
                             nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
                         else
@@ -525,6 +524,51 @@ while true; do
                         fi
                         echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
                         press_any_key_to_continue
+                        break
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "${red}无效的输入!${re}"
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+        3) # Tuic-V5 子菜单 (这里就是你要确认的 Tuic 逻辑)
+            while true; do
+                clear
+                echo "--------------"
+                echo -e "${green}1. 安装或重新安装 Tuic-V5${re}"
+                echo -e "${yellow}2. 更改 Tuic-V5 配置 (UUID/端口)${re}"
+                echo -e "${red}3. 卸载 Tuic-V5${re}"
+                echo "--------------"
+                echo -e "${skyblue}0. 返回上一级菜单${re}"
+                echo "--------------"
+                read -p $'\033[1;91m请输入你的选择: \033[0m' tuic_sub_choice
+                case $tuic_sub_choice in
+                    1)
+                        if [ -d "/root/tuic" ]; then
+                            echo -e "${yellow}检测到 Tuic 已安装.${re}"
+                            read -p $'\033[1;35m您想重新安装吗? (y/N): \033[0m' reinstall_confirm
+                            if [[ "$reinstall_confirm" =~ ^[Yy]$ ]]; then
+                                uninstall_tuic
+                                install_tuic
+                            else
+                                echo -e "${yellow}取消重新安装.${re}"
+                            fi
+                        else
+                            install_tuic
+                        fi
+                        break
+                        ;;
+                    2)
+                        change_tuic_config
+                        break
+                        ;;
+                    3)
+                        uninstall_tuic
                         break
                         ;;
                     0)
