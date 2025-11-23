@@ -6,7 +6,7 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 purple='\033[0;35m'
 skyblue='\033[0;36m'
-white='\033[1;91m' # 修改：用户指定为亮红色 (1;91m)
+white='\033[1;91m' # 亮红色
 re='\033[0m' # 重置颜色
 
 # --- 辅助函数 ---
@@ -51,6 +51,7 @@ check_port() {
 press_any_key_to_continue() {
     echo -e "${skyblue}---------------------------------------------------------${re}"
     read -n 1 -s -r -p "按任意键返回上一级菜单..."
+    echo ""
 }
 
 # 检测服务器架构
@@ -79,14 +80,14 @@ detect_arch() {
 # --- Tuic-V5 功能实现 ---
 
 install_tuic() {
-    # 强制回到 root 目录，防止当前目录被删导致报错
-    cd ~
+    # 强制回到 root 目录
+    cd ~ || exit 1
 
     install_soft jq
     install_soft curl
     install_soft openssl
     install_soft wget
-    install_soft net-tools # 确保 netstat 可用
+    install_soft net-tools
 
     echo -e "${green}Tuic V5 正在安装中，请稍候...${re}"
 
@@ -98,12 +99,12 @@ install_tuic() {
 
     # 下载二进制文件
     mkdir -p /root/tuic
-    cd /root/tuic
+    cd /root/tuic || exit 1
     echo -e "${yellow}正在下载 Tuic 二进制文件...${re}"
     wget -O tuic-server -q "$download_url"
     if [[ $? -ne 0 ]]; then
         echo -e "${red}错误: 下载 tuic 二进制文件失败！${re}"
-        cd ~ # 失败后回到主目录
+        cd ~
         press_any_key_to_continue
         return
     fi
@@ -171,11 +172,10 @@ EOL
     if [ -f "/etc/alpine-release" ]; then
         # Alpine 系统使用 nohup 后台运行
         echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
-        # 必须在后台运行，且不要占用当前终端
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
         echo -e "${green}Tuic 已在后台启动。${re}"
     else
-        # 其他系统 (Debian/Ubuntu/CentOS) 使用 Systemd
+        # 其他系统 使用 Systemd
         cat > /etc/systemd/system/tuic.service <<EOL
 [Unit]
 Description=tuic service
@@ -211,12 +211,12 @@ EOL
     echo -e "${white}V2rayN、NekoBox 客户端配置链接: ${re}"
     echo -e "${skyblue}tuic://$UUID:$password@$public_ip:$port?congestion_control=bbr&alpn=h3&sni=www.bing.com&udp_relay_mode=native&allow_insecure=1#$isp${re}"
     echo ""
-    cd ~ # 安装完成后回到主目录
+    cd ~
     press_any_key_to_continue
 }
 
 change_tuic_config() {
-    cd ~ # 确保在主目录
+    cd ~ || exit 1
     install_soft jq
     install_soft net-tools
 
@@ -258,7 +258,7 @@ change_tuic_config() {
     sed -i "s/\"\[::\]:[0-9]\+\"/\"\[::\]:$new_port\"/" "$config_file"
     echo -e "${green}新的 PORT: $new_port${re}"
 
-    # --- 重启服务 (兼容 Alpine) ---
+    # --- 重启服务 ---
     if [ -f "/etc/alpine-release" ]; then
         echo -e "${yellow}正在重启 Tuic (Alpine)...${re}"
         pkill -f tuic-server > /dev/null 2>&1
@@ -281,11 +281,9 @@ change_tuic_config() {
 }
 
 uninstall_tuic() {
-    # 关键修复：先回到 home，否则删了目录后脚本会因为找不到当前路径而报错
-    cd ~ 
+    cd ~ || exit 1
     echo -e "${yellow}正在卸载 Tuic V5...${re}"
     
-    # --- 停止服务 (兼容 Alpine) ---
     if [ -f "/etc/alpine-release" ]; then
         pkill -f tuic-server > /dev/null 2>&1
     else
@@ -316,179 +314,273 @@ fi
 
 # --- 主菜单 ---
 while true; do
-    # 确保主菜单开始前也在安全目录
-      cd ~ 
-      clear
-      echo -e "${purple}▶ 节点搭建脚本合集${re}"
-      echo -e "${green}---------------------------------------------------------${re}"
-      echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-      # 修改：使用用户指定的亮红色变量 white
-      echo -e "${white} 3. Tuic-V5一键脚本${re}"
-      echo -e "${yellow}---------------------------------------------------------${re}"
-      echo -e "${skyblue} 0. 退出脚本${re}"
-      echo "---------------"
-      read -p $'\033[1;91m请输入你的选择: \033[0m' main_choice
-      case $main_choice in
+    cd ~ || exit 1
+    clear
+    echo -e "${purple}▶ 节点搭建脚本合集${re}"
+    echo -e "${green}---------------------------------------------------------${re}"
+    echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
+    echo -e "${white} 3. Tuic-V5一键脚本${re}"
+    echo -e "${yellow}---------------------------------------------------------${re}"
+    echo -e "${skyblue} 0. 退出脚本${re}"
+    echo "---------------"
+    read -p $'\033[1;91m请输入你的选择: \033[0m' main_choice
+    case $main_choice in
         1) # Hysteria2 子菜单
-        while true; do
-        clear
-          echo "--------------"
-          echo -e "${green}1.安装Hysteria2${re}"
-          echo -e "${red}2.卸载Hysteria2${re}"
-          echo -e "${yellow}3.更换Hysteria2端口${re}"
-          echo "--------------"
-          echo -e "${skyblue}0. 返回上一级菜单${re}"
-          echo "--------------"
-          read -p $'\033[1;91m请输入你的选择: \033[0m' sub_choice
-            case $sub_choice in
-                1) # 安装Hysteria2
-                    clear
-                    cd ~ # 确保目录
-                    install_soft net-tools
-                    read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
-                    if [[ -z "$port" ]]; then
-                        port=$(shuf -i 2000-65000 -n 1)
-                        echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
-                    fi
-
-                    while check_port "$port"; do
-                        echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
-                        read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车将使用随机端口）：\033[0m' port
+            while true; do
+                clear
+                echo "--------------"
+                echo -e "${green}1.安装Hysteria2${re}"
+                echo -e "${red}2.卸载Hysteria2${re}"
+                echo -e "${yellow}3.更换Hysteria2端口${re}"
+                echo "--------------"
+                echo -e "${skyblue}0. 返回上一级菜单${re}"
+                echo "--------------"
+                read -p $'\033[1;91m请输入你的选择: \033[0m' sub_choice
+                case $sub_choice in
+                    1) # 安装Hysteria2
+                        clear
+                        cd ~
+                        install_soft net-tools
+                        read -p $'\033[1;35m请输入Hysteria2节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                         if [[ -z "$port" ]]; then
                             port=$(shuf -i 2000-65000 -n 1)
                             echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                         fi
-                    done
 
-                    if [ -f "/etc/alpine-release" ]; then
-                        # 修复：执行前先回到 home，避免在已删除目录执行报错
+                        while check_port "$port"; do
+                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车将使用随机端口）：\033[0m' port
+                            if [[ -z "$port" ]]; then
+                                port=$(shuf -i 2000-65000 -n 1)
+                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                            fi
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            cd ~
+                            SERVER_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/containers-shell/hy2.sh)"
+                        else
+                            HY2_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/Hysteria2.sh)"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    2) # 卸载Hysteria2
                         cd ~
-                        SERVER_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/containers-shell/hy2.sh)"
-                    else
-                        HY2_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/Hysteria2.sh)"
-                    fi
-                    press_any_key_to_continue
-                    break
-                    ;;
-                2) # 卸载Hysteria2
-                    cd ~ # 关键修复
-                    if [ -f "/etc/alpine-release" ]; then
-                        pkill -f 'web'
-                        # 因为前面 cd ~ 了，这里直接 rm -rf web 即可 (假设安装在 ~ 下)
-                        rm -rf web npm server.crt server.key config.yaml
-                        echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
-                    else
-                        systemctl stop hysteria-server.service
-                        systemctl disable hysteria-server.service
-                        rm -f /usr/local/bin/hysteria
-                        rm -f /etc/systemd/system/hysteria-server.service
-                        rm -rf /etc/hysteria
-                        systemctl daemon-reload
-                        echo -e "${green}Hysteria2 (Systemd) 已卸载${re}"
-                    fi
-                    press_any_key_to_continue
-                    break
-                    ;;
-                3) # 更换Hysteria2端口
-                    clear
-                    cd ~
-                    install_soft net-tools
-                    read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
-                    [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-
-                    while check_port "$new_port"; do
-                        echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
+                        if [ -f "/etc/alpine-release" ]; then
+                            pkill -f 'web'
+                            rm -rf web npm server.crt server.key config.yaml
+                            echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
+                        else
+                            systemctl stop hysteria-server.service
+                            systemctl disable hysteria-server.service
+                            rm -f /usr/local/bin/hysteria
+                            rm -f /etc/systemd/system/hysteria-server.service
+                            rm -rf /etc/hysteria
+                            systemctl daemon-reload
+                            echo -e "${green}Hysteria2 (Systemd) 已卸载${re}"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    3) # 更换Hysteria2端口
+                        clear
+                        cd ~
+                        install_soft net-tools
                         read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
                         [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
-                    done
 
-                    if [ -f "/etc/alpine-release" ]; then
-                         # 增加检查，防止未安装修改
-                        if [ ! -f "/root/config.yaml" ]; then
-                            echo -e "${red}错误: 找不到配置文件 /root/config.yaml，请先安装 Hysteria2。${re}"
-                            press_any_key_to_continue
-                            break
+                        while check_port "$new_port"; do
+                            echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置Hysteria2端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                            [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            if [ ! -f "/root/config.yaml" ]; then
+                                echo -e "${red}错误: 找不到配置文件 /root/config.yaml，请先安装 Hysteria2。${re}"
+                                press_any_key_to_continue
+                                break
+                            fi
+                            sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
+                            pkill -f 'web'
+                            nohup ./web server config.yaml >/dev/null 2>&1 &
+                        else
+                            clear
+                            sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /etc/hysteria/config.yaml
+                            systemctl restart hysteria-server.service
                         fi
-                        sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /root/config.yaml
-                        pkill -f 'web'
-                        nohup ./web server config.yaml >/dev/null 2>&1 &
-                    else
+                        echo -e "${green}Hysteria2端口已更换成$new_port,请手动更改客户端配置!${re}"
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "${red}无效的输入!${re}"
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+        2) # Reality 子菜单
+            while true; do
+                clear
+                echo "--------------"
+                echo -e "${green}1.安装Reality${re}"
+                echo -e "${red}2.卸载Reality${re}"
+                echo -e "${yellow}3.更换Reality端口${re}"
+                echo "--------------"
+                echo -e "${skyblue}0. 返回上一级菜单${re}"
+                echo "--------------"
+                read -p $'\033[1;91m请输入你的选择: \033[0m' sub_choice
+                case $sub_choice in
+                    1) # 安装Reality
                         clear
-                        sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /etc/hysteria/config.yaml
-                        systemctl restart hysteria-server.service
-                    fi
-                    echo -e "${green}Hysteria2端口已更换成$new_port,请手动更改客户端配置!${re}"
-                    press_any_key_to_continue
-                    break
-                    ;;
-                0)
-                    break
-                    ;;
-                *)
-                    echo -e "${red}无效的输入!${re}"
-                    sleep 1
-                    ;;
-            esac
-        done
-        ;;
-		2) # Reality 子菜单
-        while true; do
-        clear
-          echo "--------------"
-          echo -e "${green}1.安装Reality${re}"
-          echo -e "${red}2.卸载Reality${re}"
-          echo -e "${yellow}3.更换Reality端口${re}"
-          echo "--------------"
-          echo -e "${skyblue}0. 返回上一级菜单${re}"
-          echo "--------------"
-          read -p $'\033[1;91m请输入你的选择: \033[0m' sub_choice
-            case $sub_choice in
-                1) # 安装Reality
-                    clear
-                    cd ~ # 确保目录
-                    install_soft net-tools
-                    read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
-                    if [[ -z "$port" ]]; then
-                        port=$(shuf -i 2000-65000 -n 1)
-                        echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
-                    fi
-
-                    while check_port "$port"; do
-                        echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
-                        read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
+                        cd ~
+                        install_soft net-tools
+                        read -p $'\033[1;35m请输入reality节点端口(nat小鸡请输入可用端口范围内的端口),回车跳过则使用随机端口：\033[0m' port
                         if [[ -z "$port" ]]; then
                             port=$(shuf -i 2000-65000 -n 1)
                             echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
                         fi
-                    done
 
-                    if [ -f "/etc/alpine-release" ]; then
-                        # 关键修复：确保在 curl 之前回到 home，否则 mkdir 会失败
-                        cd ~ 
-                        PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
-                    else
-                        PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
-                    fi
-                    press_any_key_to_continue
-                    break
-                    ;;
-                2) # 卸载Reality
-                    cd ~ # 关键修复
-                    if [ -f "/etc/alpine-release" ]; then
-                        pkill -f 'web'
-                        rm -rf app
-                        echo -e "${green}Reality (Alpine) 已卸载${re}"
-                    else
-                        systemctl stop xray
-                        systemctl disable xray
-                        rm -f /usr/local/bin/xray
-                        rm -f /etc/systemd/system/xray.service
-                        rm -f /etc/systemd/system/xray@.service
-                        rm -rf /usr/local/etc/xray
-                        rm -rf /usr/local/share/xray
-                        rm -rf /var/log/xray /var/lib/xray
-                        systemctl daemon-reload
-                        echo -e "${green}Reality (Systemd) 已卸载${re}"
-                    fi
-                    press_any_key_to_continue
-                    break
+                        while check_port "$port"; do
+                            echo -e "${red}${port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' port
+                            if [[ -z "$port" ]]; then
+                                port=$(shuf -i 2000-65000 -n 1)
+                                echo -e "${yellow}未输入端口，已为您分配随机端口: $port${re}"
+                            fi
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            cd ~
+                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
+                        else
+                            PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    2) # 卸载Reality
+                        cd ~
+                        if [ -f "/etc/alpine-release" ]; then
+                            pkill -f 'web'
+                            rm -rf app
+                            echo -e "${green}Reality (Alpine) 已卸载${re}"
+                        else
+                            systemctl stop xray
+                            systemctl disable xray
+                            rm -f /usr/local/bin/xray
+                            rm -f /etc/systemd/system/xray.service
+                            rm -f /etc/systemd/system/xray@.service
+                            rm -rf /usr/local/etc/xray
+                            rm -rf /usr/local/share/xray
+                            rm -rf /var/log/xray /var/lib/xray
+                            systemctl daemon-reload
+                            echo -e "${green}Reality (Systemd) 已卸载${re}"
+                        fi
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    3) # 更换Reality端口
+                        clear
+                        cd ~
+                        install_soft jq
+                        install_soft net-tools
+                        read -p $'\033[1;35m设置 reality 端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                        [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
+
+                        while check_port "$new_port"; do
+                            echo -e "${red}${new_port}端口已经被其他程序占用，请更换端口重试${re}"
+                            read -p $'\033[1;35m设置reality端口[1-65535]（回车跳过将使用随机端口）：\033[0m' new_port
+                            [[ -z "$new_port" ]] && new_port=$(shuf -i 2000-65000 -n 1)
+                        done
+
+                        if [ -f "/etc/alpine-release" ]; then
+                            if [ ! -f "/root/app/config.json" ]; then
+                                echo -e "${red}错误: 找不到配置文件 /root/app/config.json。请确保 Reality 已经安装成功。${re}"
+                                press_any_key_to_continue
+                                break
+                            fi
+                            
+                            jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /root/app/config.json > tmp.json && mv tmp.json /root/app/config.json
+                            pkill -f 'web'
+                            cd /root/app || { echo "无法进入 /root/app"; exit 1; }
+                            nohup ./web -c config.json >/dev/null 2>&1 &
+                        else
+                            clear
+                            jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
+                            systemctl restart xray.service
+                        fi
+                        echo -e "${green}Reality端口已更换成$new_port,请手动更改客户端配置!${re}"
+                        press_any_key_to_continue
+                        break
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "${red}无效的输入!${re}"
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+        3) # Tuic-V5 子菜单
+            while true; do
+                clear
+                echo "--------------"
+                echo -e "${green}1. 安装或重新安装 Tuic-V5${re}"
+                echo -e "${yellow}2. 更改 Tuic-V5 配置 (UUID/端口)${re}"
+                echo -e "${red}3. 卸载 Tuic-V5${re}"
+                echo "--------------"
+                echo -e "${skyblue}0. 返回上一级菜单${re}"
+                echo "--------------"
+                read -p $'\033[1;91m请输入你的选择: \033[0m' tuic_sub_choice
+                case $tuic_sub_choice in
+                    1)
+                        if [ -d "/root/tuic" ]; then
+                            echo -e "${yellow}检测到 Tuic 已安装.${re}"
+                            read -p $'\033[1;35m您想重新安装吗? (y/N): \033[0m' reinstall_confirm
+                            if [[ "$reinstall_confirm" =~ ^[Yy]$ ]]; then
+                                uninstall_tuic
+                                install_tuic
+                            else
+                                echo -e "${yellow}取消重新安装.${re}"
+                            fi
+                        else
+                            install_tuic
+                        fi
+                        break
+                        ;;
+                    2)
+                        change_tuic_config
+                        break
+                        ;;
+                    3)
+                        uninstall_tuic
+                        break
+                        ;;
+                    0)
+                        break
+                        ;;
+                    *)
+                        echo -e "${red}无效的输入!${re}"
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+        0)
+            echo "退出脚本。"
+            exit 0
+            ;;
+        *)
+            echo -e "${red}无效的输入!${re}"
+            sleep 1
+            ;;
+    esac
+done
