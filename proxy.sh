@@ -85,6 +85,45 @@ detect_arch() {
     esac
 }
 
+# --- 新增功能：配置 Alpine 开机自启 ---
+setup_alpine_autorun() {
+    if [ -f "/etc/alpine-release" ]; then
+        echo -e "${yellow}正在配置 Alpine 开机自启 (OpenRC)...${re}"
+        
+        # 确保 local 服务被添加到启动项
+        if command -v rc-update &> /dev/null; then
+            rc-update add local default >/dev/null 2>&1
+        fi
+
+        # 创建或覆盖自启脚本
+        cat > /etc/local.d/proxy_autorun.start <<EOF
+#!/bin/sh
+
+# Hysteria2 自启检测
+if [ -f "/root/web" ] && [ -f "/root/config.yaml" ]; then
+    cd /root
+    nohup ./web server config.yaml >/dev/null 2>&1 &
+fi
+
+# Reality 自启检测
+if [ -f "/root/app/web" ] && [ -f "/root/app/config.json" ]; then
+    cd /root
+    nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
+fi
+
+# Tuic-V5 自启检测
+if [ -f "/root/tuic/tuic-server" ] && [ -f "/root/tuic/config.json" ]; then
+    cd /root/tuic
+    nohup ./tuic-server -c config.json >/dev/null 2>&1 &
+fi
+EOF
+        
+        # 赋予执行权限
+        chmod +x /etc/local.d/proxy_autorun.start
+        echo -e "${green}Alpine 开机自启配置完成！${re}"
+    fi
+}
+
 # --- Tuic-V5 功能实现 ---
 
 install_tuic() {
@@ -197,6 +236,10 @@ EOL
         echo -e "${yellow}检测到 Alpine 系统，使用 nohup 启动 Tuic...${re}"
         # 确保使用绝对路径
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
+        
+        # 配置开机自启
+        setup_alpine_autorun
+        
         echo -e "${green}Tuic 已在后台启动。${re}"
     else
         # 其他系统 使用 Systemd
@@ -288,6 +331,8 @@ change_tuic_config() {
         pkill -f tuic-server > /dev/null 2>&1
         sleep 1
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
+        # 更新自启配置（虽然路径没变，但刷新一下更保险）
+        setup_alpine_autorun
     else
         systemctl daemon-reload
         systemctl restart tuic
@@ -318,6 +363,12 @@ uninstall_tuic() {
     fi
     
     rm -rf /root/tuic
+    
+    # 刷新自启配置（Tuic 文件没了，自启脚本会自动跳过它）
+    if [ -f "/etc/alpine-release" ]; then
+        setup_alpine_autorun
+    fi
+    
     echo -e "${green}Tuic V5 已卸载成功！${re}"
     press_any_key_to_continue
 }
@@ -325,10 +376,10 @@ uninstall_tuic() {
 # --- Alpine 系统环境预处理 ---
 if [ -f "/etc/alpine-release" ]; then
     if ! command -v bash &> /dev/null || ! command -v openssl &> /dev/null || ! command -v netstat &> /dev/null; then
-        echo -e "${yellow}检测到 Alpine 系统，正在安装基础依赖 (bash, openssl, net-tools)...${re}"
+        echo -e "${yellow}检测到 Alpine 系统，正在安装基础依赖 (bash, openssl, net-tools, openrc)...${re}"
         if command -v apk &> /dev/null; then
             apk update > /dev/null 2>&1
-            apk add bash openssl net-tools > /dev/null 2>&1
+            apk add bash openssl net-tools openrc > /dev/null 2>&1
             echo -e "${green}基础依赖安装完成。${re}"
         else
             echo -e "${red}错误: 未找到 apk 包管理器，无法自动安装依赖。${re}"
@@ -343,7 +394,6 @@ while true; do
     echo -e "${purple}▶ 节点搭建脚本合集${re}"
     echo -e "${green}---------------------------------------------------------${re}"
     echo -e "${white} 1. Hysteria2一键脚本        2. Reality一键脚本${re}"
-    # 确认 Tuic 选项存在且使用红色高亮
     echo -e "${white} 3. Tuic-V5一键脚本${re}"
     echo -e "${yellow}---------------------------------------------------------${re}"
     echo -e "${skyblue} 0. 退出脚本${re}"
@@ -384,6 +434,7 @@ while true; do
                         if [ -f "/etc/alpine-release" ]; then
                             cd ~
                             SERVER_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/containers-shell/hy2.sh)"
+                            setup_alpine_autorun # 更新自启
                         else
                             HY2_PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/Hysteria2.sh)"
                         fi
@@ -396,6 +447,7 @@ while true; do
                             # 修复：只杀带 config.yaml 的 web 进程
                             pkill -f "server config.yaml"
                             rm -rf web npm server.crt server.key config.yaml
+                            setup_alpine_autorun # 更新自启
                             echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
                         else
                             systemctl stop hysteria-server.service
@@ -432,6 +484,7 @@ while true; do
                             # 修复：重启 Hy2，使用精确匹配
                             pkill -f "server config.yaml"
                             nohup ./web server config.yaml >/dev/null 2>&1 &
+                            setup_alpine_autorun # 更新自启
                         else
                             clear
                             sed -i "s/^listen: :[0-9]*/listen: :$new_port/" /etc/hysteria/config.yaml
@@ -485,6 +538,7 @@ while true; do
                         if [ -f "/etc/alpine-release" ]; then
                             cd ~
                             PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/scripts/master/test.sh)"
+                            setup_alpine_autorun # 更新自启
                         else
                             PORT=$port bash -c "$(curl -L https://raw.githubusercontent.com/eooce/xray-reality/master/reality.sh)"
                         fi
@@ -497,6 +551,7 @@ while true; do
                             # 修复：根据你的截图，Reality 的特征是 "app/web"
                             pkill -f "app/web"
                             rm -rf app
+                            setup_alpine_autorun # 更新自启
                             echo -e "${green}Reality (Alpine) 已卸载${re}"
                         else
                             systemctl stop xray
@@ -541,6 +596,7 @@ while true; do
                             # 修复：使用绝对路径启动，确保进程名包含 "app/web"
                             cd /root
                             nohup ./app/web -c ./app/config.json >/dev/null 2>&1 &
+                            setup_alpine_autorun # 更新自启
                         else
                             clear
                             jq --argjson new_port "$new_port" '.inbounds[0].port = $new_port' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
@@ -560,7 +616,7 @@ while true; do
                 esac
             done
             ;;
-        3) # Tuic-V5 子菜单 (这里就是你要确认的 Tuic 逻辑)
+        3) # Tuic-V5 子菜单
             while true; do
                 clear
                 echo "--------------"
