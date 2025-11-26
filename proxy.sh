@@ -331,7 +331,7 @@ change_tuic_config() {
         pkill -f tuic-server > /dev/null 2>&1
         sleep 1
         nohup /root/tuic/tuic-server -c /root/tuic/config.json > /root/tuic/tuic.log 2>&1 &
-        # 更新自启配置（虽然路径没变，但刷新一下更保险）
+        # 更新自启配置（确保端口变动后自启依然有效）
         setup_alpine_autorun
     else
         systemctl daemon-reload
@@ -364,10 +364,8 @@ uninstall_tuic() {
     
     rm -rf /root/tuic
     
-    # 刷新自启配置（Tuic 文件没了，自启脚本会自动跳过它）
-    if [ -f "/etc/alpine-release" ]; then
-        setup_alpine_autorun
-    fi
+    # 修复：移除卸载时的自启配置调用，避免产生误解。
+    # 开机脚本会自动检测文件是否存在，不存在则不启动，无需手动刷新。
     
     echo -e "${green}Tuic V5 已卸载成功！${re}"
     press_any_key_to_continue
@@ -447,7 +445,7 @@ while true; do
                             # 修复：只杀带 config.yaml 的 web 进程
                             pkill -f "server config.yaml"
                             rm -rf web npm server.crt server.key config.yaml
-                            setup_alpine_autorun # 更新自启
+                            # 卸载时不再调用自启刷新，避免误会
                             echo -e "${green}Hysteria2 (Alpine) 已卸载${re}"
                         else
                             systemctl stop hysteria-server.service
@@ -551,7 +549,7 @@ while true; do
                             # 修复：根据你的截图，Reality 的特征是 "app/web"
                             pkill -f "app/web"
                             rm -rf app
-                            setup_alpine_autorun # 更新自启
+                            # 卸载时不再调用自启刷新，避免误会
                             echo -e "${green}Reality (Alpine) 已卸载${re}"
                         else
                             systemctl stop xray
