@@ -25,6 +25,44 @@ pause() {
     read -rp "按回车键继续..."
 }
 
+get_mem_mb() {
+    awk '/MemTotal/ {print int(($2 + 1023) / 1024)}' /proc/meminfo
+}
+
+get_recommended_swap_mb() {
+    local mem_mb
+    mem_mb="$(get_mem_mb)"
+    echo $((mem_mb * 2))
+}
+
+read_swap_size() {
+    local mem_mb
+    local recommend_mb
+    local input_size
+
+    mem_mb="$(get_mem_mb)"
+    recommend_mb="$(get_recommended_swap_mb)"
+
+    echo -e "${Green}当前物理内存约为：${mem_mb} MB${Font}"
+    echo -e "${Green}建议 Swap 设置为内存的 2 倍：${recommend_mb} MB${Font}"
+    echo -e "${Yellow}如果直接回车，将默认使用建议值：${recommend_mb} MB${Font}"
+    echo
+
+    read -rp "请输入 Swap 数值，单位 MB，默认 ${recommend_mb}: " input_size
+
+    if [[ -z "$input_size" ]]; then
+        input_size="$recommend_mb"
+    fi
+
+    if ! valid_size "$input_size"; then
+        echo -e "${Red}输入错误，必须是正整数。${Font}"
+        return 1
+    fi
+
+    echo "$input_size"
+    return 0
+}
+
 show_swap() {
     echo
     echo -e "${Green}当前内存信息：${Font}"
@@ -258,14 +296,15 @@ add_swap() {
         return
     fi
 
-    echo -e "${Green}请输入需要添加的 Swap 大小，单位 MB。比如 4096 表示 4G。${Font}"
-    read -rp "请输入 Swap 数值: " swapsize
+    echo -e "${Green}请输入需要添加的 Swap 大小。${Font}"
+    echo -e "${Yellow}推荐值为当前内存的 2 倍。${Font}"
+    echo
 
-    if ! valid_size "$swapsize"; then
-        echo -e "${Red}输入错误，必须是正整数。${Font}"
+    local swapsize
+    swapsize="$(read_swap_size)" || {
         pause
         return
-    fi
+    }
 
     local swapfile="/swapfile"
 
@@ -303,14 +342,15 @@ replace_swap_safe() {
     fi
 
     echo
-    echo -e "${Green}请输入新的 Swap 大小，单位 MB。比如 4096 表示 4G。${Font}"
-    read -rp "请输入 Swap 数值: " swapsize
+    echo -e "${Green}请输入新的 Swap 大小。${Font}"
+    echo -e "${Yellow}推荐值为当前内存的 2 倍。${Font}"
+    echo
 
-    if ! valid_size "$swapsize"; then
-        echo -e "${Red}输入错误，必须是正整数。${Font}"
+    local swapsize
+    swapsize="$(read_swap_size)" || {
         pause
         return
-    fi
+    }
 
     echo
     echo -e "${Green}请输入新 swap 文件路径。${Font}"
@@ -367,13 +407,14 @@ replace_swap_safe() {
     echo -e "${Green}重启后，旧 swap 文件会自动清理。${Font}"
     echo
 
-    read -rp "是否现在立即重启？输入 y 确认，其他键取消: " reboot_confirm
+    read -rp "是否现在立即重启？直接回车默认重启，[Y/n]: " reboot_confirm
 
-    if [[ "$reboot_confirm" == "y" || "$reboot_confirm" == "Y" ]]; then
+    if [[ -z "$reboot_confirm" || "$reboot_confirm" == "y" || "$reboot_confirm" == "Y" ]]; then
         echo -e "${Green}系统即将重启...${Font}"
         sleep 2
         reboot
     else
+        echo -e "${Yellow}你已取消立即重启。${Font}"
         echo -e "${Yellow}你可以稍后手动执行 reboot。${Font}"
         echo -e "${Yellow}只要重启完成，旧 swap 会被自动清理。${Font}"
         pause
@@ -476,8 +517,8 @@ main() {
         echo -e "${Green}安全 Swap 管理脚本${Font}"
         echo -e "———————————————————————————————————————"
         echo -e "${Green}1、查看 swap 信息${Font}"
-        echo -e "${Green}2、添加 swap，适合当前没有 swap 的情况${Font}"
-        echo -e "${Green}3、安全更换 swap，推荐用于扩容/替换 swap${Font}"
+        echo -e "${Green}2、添加 swap，默认推荐内存 2 倍${Font}"
+        echo -e "${Green}3、安全更换 swap，默认推荐内存 2 倍${Font}"
         echo -e "${Green}4、手动清理旧 swap 文件，一般不需要${Font}"
         echo -e "${Green}5、删除 swap 配置，重启后生效${Font}"
         echo -e "${Green}6、查看自动清理日志${Font}"
