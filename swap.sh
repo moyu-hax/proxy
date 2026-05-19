@@ -43,19 +43,20 @@ read_swap_size() {
     mem_mb="$(get_mem_mb)"
     recommend_mb="$(get_recommended_swap_mb)"
 
-    echo -e "${Green}当前物理内存约为：${mem_mb} MB${Font}"
-    echo -e "${Green}建议 Swap 设置为内存的 2 倍：${recommend_mb} MB${Font}"
-    echo -e "${Yellow}如果直接回车，将默认使用建议值：${recommend_mb} MB${Font}"
-    echo
+    echo -e "${Green}当前物理内存约为：${mem_mb} MB${Font}" >&2
+    echo -e "${Green}建议 Swap 设置为内存的 2 倍：${recommend_mb} MB${Font}" >&2
+    echo -e "${Yellow}如果直接回车，将默认使用建议值：${recommend_mb} MB${Font}" >&2
+    echo >&2
 
-    read -rp "请输入 Swap 数值，单位 MB，默认 ${recommend_mb}: " input_size
+    printf "请输入 Swap 数值，单位 MB，默认 %s: " "$recommend_mb" >&2
+    read -r input_size
 
     if [[ -z "$input_size" ]]; then
         input_size="$recommend_mb"
     fi
 
     if ! valid_size "$input_size"; then
-        echo -e "${Red}输入错误，必须是正整数。${Font}"
+        echo -e "${Red}输入错误，必须是正整数。${Font}" >&2
         return 1
     fi
 
