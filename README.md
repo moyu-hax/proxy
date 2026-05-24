@@ -19,9 +19,17 @@ curl -fsSL https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/frp.
 ```
 PORT=56743 bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
 ```
-指定端口和 FakeTLS 域名运行：
+重置旧 secret 并指定端口运行：
 ```
-PORT=56743 FAKETLS_DOMAIN=example.com bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
+PORT=56743 RESET_SECRET=1 bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
+```
+可选：指定端口和 FakeTLS 域名运行：
+```
+PORT=56743 RESET_SECRET=1 FAKETLS_DOMAIN=example.com bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
+```
+时间漂移较大的机器可临时提高容忍值：
+```
+PORT=56743 TOLERATE_TIME_SKEWNESS=20s bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
 ```
 Alpine 如果没有 bash，先安装：
 ```

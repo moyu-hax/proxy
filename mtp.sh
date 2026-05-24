@@ -12,6 +12,7 @@ USERNAME_VALUE="$(whoami 2>/dev/null | tr '[:upper:]' '[:lower:]' || printf 'use
 WORKDIR="${WORKDIR:-$HOME/mtp}"
 MTG_VERSION="${MTG_VERSION:-2.2.8}"
 GH_PROXY="${GH_PROXY:-}"
+TOLERATE_TIME_SKEWNESS="${TOLERATE_TIME_SKEWNESS:-20s}"
 
 mkdir -p "$WORKDIR"
 
@@ -43,13 +44,20 @@ ensure_secret() {
         return 0
     fi
 
-    if [ -s "$WORKDIR/secret.txt" ]; then
+    if [ -s "$WORKDIR/secret.txt" ] && [ "${RESET_SECRET:-0}" != "1" ]; then
         SECRET="$(tr -d '[:space:]' <"$WORKDIR/secret.txt")"
         export SECRET
         return 0
     fi
 
-    domain="${FAKETLS_DOMAIN:-www.cloudflare.com}"
+    domain="${FAKETLS_DOMAIN:-}"
+    if [ -z "$domain" ]; then
+        SECRET="$(make_secret)"
+        green "已生成普通 MTProto secret，无需域名解析"
+        save_secret
+        return 0
+    fi
+
     generated=""
     if [ -x "$WORKDIR/mtg" ]; then
         generated="$("$WORKDIR/mtg" generate-secret --hex "$domain" 2>/dev/null | awk '{print $NF}' | tail -n 1 | tr -d '[:space:]' || true)"
@@ -154,6 +162,27 @@ port_in_use() {
 
 is_ipv4() {
     printf '%s\n' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+}
+
+reverse_dns_name() {
+    ip="$1"
+
+    if command -v nslookup >/dev/null 2>&1; then
+        nslookup "$ip" 2>/dev/null | awk '/name =/ {print $4; exit}' | sed 's/\.$//'
+        return 0
+    fi
+
+    if command -v host >/dev/null 2>&1; then
+        host "$ip" 2>/dev/null | awk '/pointer/ {print $5; exit}' | sed 's/\.$//'
+        return 0
+    fi
+
+    if command -v dig >/dev/null 2>&1; then
+        dig +short -x "$ip" 2>/dev/null | sed 's/\.$//;1q'
+        return 0
+    fi
+
+    return 1
 }
 
 pick_random_free_port() {
@@ -314,6 +343,7 @@ write_mtg_config() {
 secret = "$SECRET"
 bind-to = "0.0.0.0:$proxy_port"
 prefer-ip = "prefer-ipv4"
+tolerate-time-skewness = "$TOLERATE_TIME_SKEWNESS"
 EOF
     if [ -n "$public_ipv4" ] && is_ipv4 "$public_ipv4"; then
         printf 'public-ipv4 = "%s"\n' "$public_ipv4" >>"$WORKDIR/config.toml"
@@ -367,6 +397,7 @@ if ./mtg run --help 2>&1 | grep -qi "config"; then
 secret = "$SECRET"
 bind-to = "0.0.0.0:$proxy_port"
 prefer-ip = "prefer-ipv4"
+tolerate-time-skewness = "$TOLERATE_TIME_SKEWNESS"
 CFG
     if [ -n "$public_ipv4" ]; then
         printf 'public-ipv4 = "%s"\n' "$public_ipv4" >>"$WORKDIR/config.toml"
@@ -496,9 +527,9 @@ tg://proxy?server=$IP3&port=$MTP_PORT&secret=$SECRET"
 install_linux_vps() {
     install_alpine_deps
     download_mtg_linux
+    PUBLIC_IP="$(get_public_ip)"
     ensure_secret
     MTP_PORT="$(pick_free_port)"
-    PUBLIC_IP="$(get_public_ip)"
 
     green "使用 $MTP_PORT 作为 TG 代理端口"
     start_mtg "$MTP_PORT" "$PUBLIC_IP"
@@ -510,6 +541,7 @@ install_serv00() {
     check_serv00_port
     get_serv00_ips
     download_mtg_freebsd
+    PUBLIC_IP="$IP1"
     ensure_secret
 
     start_mtg "$MTP_PORT" "$IP1"
