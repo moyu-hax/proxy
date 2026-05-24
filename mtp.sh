@@ -306,13 +306,31 @@ get_public_ip() {
     exit 1
 }
 
+write_mtg_config() {
+    proxy_port="$1"
+
+    cat >"$WORKDIR/config.toml" <<EOF
+secret = "$SECRET"
+bind-to = "0.0.0.0:$proxy_port"
+EOF
+}
+
 start_mtg() {
     proxy_port="$1"
-    stats_port="$2"
 
     stop_old_mtg
     cd "$WORKDIR"
-    nohup ./mtg run -b "0.0.0.0:$proxy_port" "$SECRET" --stats-bind="127.0.0.1:$stats_port" >"$WORKDIR/mtg.log" 2>&1 &
+
+    if ./mtg run --help 2>&1 | grep -qi "config"; then
+        write_mtg_config "$proxy_port"
+        nohup ./mtg run "$WORKDIR/config.toml" >"$WORKDIR/mtg.log" 2>&1 &
+    elif ./mtg simple-run --help >/dev/null 2>&1; then
+        nohup ./mtg simple-run "0.0.0.0:$proxy_port" "$SECRET" >"$WORKDIR/mtg.log" 2>&1 &
+    else
+        stats_port="$(pick_stats_port "$proxy_port")"
+        nohup ./mtg run -b "0.0.0.0:$proxy_port" "$SECRET" --stats-bind="127.0.0.1:$stats_port" >"$WORKDIR/mtg.log" 2>&1 &
+    fi
+
     mtg_pid="$!"
     sleep 1
 
@@ -327,15 +345,30 @@ start_mtg() {
 
 write_restart_script() {
     proxy_port="$1"
-    stats_port="$2"
 
     cat >"$WORKDIR/restart.sh" <<EOF
 #!/bin/sh
 pkill -x mtg >/dev/null 2>&1 || true
 cd "$WORKDIR" || exit 1
-nohup ./mtg run -b 0.0.0.0:$proxy_port $SECRET --stats-bind=127.0.0.1:$stats_port >"$WORKDIR/mtg.log" 2>&1 &
+if ./mtg run --help 2>&1 | grep -qi "config"; then
+    cat >"$WORKDIR/config.toml" <<CFG
+secret = "$SECRET"
+bind-to = "0.0.0.0:$proxy_port"
+CFG
+    nohup ./mtg run "$WORKDIR/config.toml" >"$WORKDIR/mtg.log" 2>&1 &
+elif ./mtg simple-run --help >/dev/null 2>&1; then
+    nohup ./mtg simple-run "0.0.0.0:$proxy_port" "$SECRET" >"$WORKDIR/mtg.log" 2>&1 &
+else
+    nohup ./mtg run -b 0.0.0.0:$proxy_port "$SECRET" >"$WORKDIR/mtg.log" 2>&1 &
+fi
 EOF
     chmod +x "$WORKDIR/restart.sh"
+}
+
+show_cleanup_tips() {
+    purple "重启命令: sh $WORKDIR/restart.sh"
+    purple "删除下载脚本: rm -f mtp.sh"
+    purple "彻底卸载: pkill -x mtg; rm -rf $WORKDIR"
 }
 
 show_link() {
@@ -347,8 +380,7 @@ show_link() {
 
     purple "\nTG 分享链接:\n"
     green "$link\n"
-    purple "重启命令: sh $WORKDIR/restart.sh"
-    purple "一键卸载: rm -rf $WORKDIR && pkill -x mtg"
+    show_cleanup_tips
     yellow "如果 Telegram 仍显示不可用，请在 VPS 防火墙和云厂商安全组放行 TCP $proxy_port。"
 }
 
@@ -434,6 +466,7 @@ tg://proxy?server=$IP3&port=$MTP_PORT&secret=$SECRET"
     printf '%s\n' "$links" | sed '/^$/d' >"$WORKDIR/link.txt"
     purple "\n分享链接:\n"
     green "$(printf '%s\n' "$links" | sed '/^$/d')\n"
+    show_cleanup_tips
 }
 
 install_linux_vps() {
@@ -441,12 +474,11 @@ install_linux_vps() {
     download_mtg_linux
     ensure_secret
     MTP_PORT="$(pick_free_port)"
-    STATS_PORT="$(pick_stats_port "$MTP_PORT")"
     PUBLIC_IP="$(get_public_ip)"
 
     green "使用 $MTP_PORT 作为 TG 代理端口"
-    start_mtg "$MTP_PORT" "$STATS_PORT"
-    write_restart_script "$MTP_PORT" "$STATS_PORT"
+    start_mtg "$MTP_PORT"
+    write_restart_script "$MTP_PORT"
     show_link "$PUBLIC_IP" "$MTP_PORT"
 }
 
@@ -455,10 +487,9 @@ install_serv00() {
     get_serv00_ips
     download_mtg_freebsd
     ensure_secret
-    STATS_PORT="$(pick_stats_port "$MTP_PORT")"
 
-    start_mtg "$MTP_PORT" "$STATS_PORT"
-    write_restart_script "$MTP_PORT" "$STATS_PORT"
+    start_mtg "$MTP_PORT"
+    write_restart_script "$MTP_PORT"
     show_serv00_links
 }
 
