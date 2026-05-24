@@ -19,6 +19,10 @@ curl -fsSL https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/frp.
 ```
 PORT=56743 bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
 ```
+指定端口和 FakeTLS 域名运行：
+```
+PORT=56743 FAKETLS_DOMAIN=example.com bash <(curl -Ls https://raw.githubusercontent.com/moyu-hax/proxy/refs/heads/main/mtp.sh)
+```
 Alpine 如果没有 bash，先安装：
 ```
 apk add --no-cache bash

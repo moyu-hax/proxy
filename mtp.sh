@@ -308,21 +308,32 @@ get_public_ip() {
 
 write_mtg_config() {
     proxy_port="$1"
+    public_ipv4="${2:-}"
 
     cat >"$WORKDIR/config.toml" <<EOF
 secret = "$SECRET"
 bind-to = "0.0.0.0:$proxy_port"
+prefer-ip = "prefer-ipv4"
+EOF
+    if [ -n "$public_ipv4" ] && is_ipv4 "$public_ipv4"; then
+        printf 'public-ipv4 = "%s"\n' "$public_ipv4" >>"$WORKDIR/config.toml"
+    fi
+    cat >>"$WORKDIR/config.toml" <<EOF
+
+[defense.blocklist]
+enabled = false
 EOF
 }
 
 start_mtg() {
     proxy_port="$1"
+    public_ipv4="${2:-}"
 
     stop_old_mtg
     cd "$WORKDIR"
 
     if ./mtg run --help 2>&1 | grep -qi "config"; then
-        write_mtg_config "$proxy_port"
+        write_mtg_config "$proxy_port" "$public_ipv4"
         nohup ./mtg run "$WORKDIR/config.toml" >"$WORKDIR/mtg.log" 2>&1 &
     elif ./mtg simple-run --help >/dev/null 2>&1; then
         nohup ./mtg simple-run "0.0.0.0:$proxy_port" "$SECRET" >"$WORKDIR/mtg.log" 2>&1 &
@@ -345,6 +356,7 @@ start_mtg() {
 
 write_restart_script() {
     proxy_port="$1"
+    public_ipv4="${2:-}"
 
     cat >"$WORKDIR/restart.sh" <<EOF
 #!/bin/sh
@@ -354,6 +366,15 @@ if ./mtg run --help 2>&1 | grep -qi "config"; then
     cat >"$WORKDIR/config.toml" <<CFG
 secret = "$SECRET"
 bind-to = "0.0.0.0:$proxy_port"
+prefer-ip = "prefer-ipv4"
+CFG
+    if [ -n "$public_ipv4" ]; then
+        printf 'public-ipv4 = "%s"\n' "$public_ipv4" >>"$WORKDIR/config.toml"
+    fi
+    cat >>"$WORKDIR/config.toml" <<CFG
+
+[defense.blocklist]
+enabled = false
 CFG
     nohup ./mtg run "$WORKDIR/config.toml" >"$WORKDIR/mtg.log" 2>&1 &
 elif ./mtg simple-run --help >/dev/null 2>&1; then
@@ -366,6 +387,9 @@ EOF
 }
 
 show_cleanup_tips() {
+    purple "诊断命令: cd $WORKDIR && ./mtg doctor config.toml"
+    purple "官方链接: cd $WORKDIR && ./mtg access config.toml"
+    purple "查看日志: tail -n 80 $WORKDIR/mtg.log"
     purple "重启命令: sh $WORKDIR/restart.sh"
     purple "删除下载脚本: rm -f mtp.sh"
     purple "彻底卸载: pkill -x mtg; rm -rf $WORKDIR"
@@ -477,8 +501,8 @@ install_linux_vps() {
     PUBLIC_IP="$(get_public_ip)"
 
     green "使用 $MTP_PORT 作为 TG 代理端口"
-    start_mtg "$MTP_PORT"
-    write_restart_script "$MTP_PORT"
+    start_mtg "$MTP_PORT" "$PUBLIC_IP"
+    write_restart_script "$MTP_PORT" "$PUBLIC_IP"
     show_link "$PUBLIC_IP" "$MTP_PORT"
 }
 
@@ -488,8 +512,8 @@ install_serv00() {
     download_mtg_freebsd
     ensure_secret
 
-    start_mtg "$MTP_PORT"
-    write_restart_script "$MTP_PORT"
+    start_mtg "$MTP_PORT" "$IP1"
+    write_restart_script "$MTP_PORT" "$IP1"
     show_serv00_links
 }
 
