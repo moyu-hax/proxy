@@ -5,18 +5,33 @@ green() { echo -e "\e[1;32m$1\033[0m"; }
 yellow() { echo -e "\e[1;33m$1\033[0m"; }
 purple() { echo -e "\e[1;35m$1\033[0m"; }
 
+# 检测系统类型
+detect_system() {
+    if command -v apk &> /dev/null; then
+        echo "alpine"
+    elif [ -f /etc/debian_version ]; then
+        echo "debian"
+    elif [ -f /etc/redhat-release ]; then
+        echo "redhat"
+    else
+        echo "unknown"
+    fi
+}
+
 # 检测并安装必要依赖
 install_dependencies() {
-    if command -v apk &> /dev/null; then
+    SYSTEM_TYPE=$(detect_system)
+
+    if [ "$SYSTEM_TYPE" = "alpine" ]; then
         yellow "检测到 Alpine 系统，正在安装依赖..."
         apk update >/dev/null 2>&1
-        apk add --no-cache bash curl wget coreutils jq >/dev/null 2>&1
+        apk add --no-cache bash curl wget coreutils jq libc6-compat libstdc++ >/dev/null 2>&1
         green "依赖安装完成"
-    elif command -v apt-get &> /dev/null; then
+    elif [ "$SYSTEM_TYPE" = "debian" ]; then
         yellow "检测到 Debian/Ubuntu 系统，检查依赖..."
         apt-get update >/dev/null 2>&1
         apt-get install -y curl wget jq >/dev/null 2>&1
-    elif command -v yum &> /dev/null; then
+    elif [ "$SYSTEM_TYPE" = "redhat" ]; then
         yellow "检测到 CentOS/RHEL 系统，检查依赖..."
         yum install -y curl wget jq >/dev/null 2>&1
     fi
@@ -151,50 +166,96 @@ esac
 
 green "检测到系统架构: $arch"
 
-# 尝试多个下载源
+# 检测系统类型
+SYSTEM_TYPE=$(detect_system)
+green "检测到系统类型: $SYSTEM_TYPE"
+
+# 根据系统类型选择下载源
 download_success=false
-urls=(
-    "https://$arch.ssss.nyc.mn/mtg-linux-$arch"
-    "https://github.com/9seconds/mtg/releases/latest/download/mtg-linux-$arch"
-)
+
+if [ "$SYSTEM_TYPE" = "alpine" ]; then
+    # Alpine 使用 musl libc，需要静态编译版本
+    yellow "Alpine 系统，尝试下载静态编译版本..."
+    urls=(
+        "https://github.com/9seconds/mtg/releases/download/v2.1.8/mtg-linux-$arch"
+        "https://github.com/eooce/test/releases/download/ARM/mtg-linux-$arch"
+        "https://$arch.ssss.nyc.mn/mtg-linux-$arch"
+    )
+else
+    # 其他系统使用标准版本
+    urls=(
+        "https://$arch.ssss.nyc.mn/mtg-linux-$arch"
+        "https://github.com/9seconds/mtg/releases/download/v2.1.8/mtg-linux-$arch"
+    )
+fi
 
 for url in "${urls[@]}"; do
     yellow "尝试从 $url 下载..."
-    if wget -q --timeout=10 -O "${WORKDIR}/mtg" "$url"; then
+    if wget -q --timeout=15 -O "${WORKDIR}/mtg" "$url"; then
         if [ -s "${WORKDIR}/mtg" ]; then
-            download_success=true
-            green "下载成功"
-            break
+            chmod +x "${WORKDIR}/mtg"
+
+            # 检查文件类型
+            if command -v file &> /dev/null; then
+                file_info=$(file "${WORKDIR}/mtg")
+                yellow "文件信息: $file_info"
+            fi
+
+            # 尝试执行测试
+            if "${WORKDIR}/mtg" --help >/dev/null 2>&1; then
+                download_success=true
+                green "下载成功并验证可执行"
+                break
+            else
+                yellow "此版本无法执行，尝试下一个源..."
+                rm -f "${WORKDIR}/mtg"
+            fi
         fi
     fi
 done
 
 if [ "$download_success" = false ]; then
-    red "下载失败，请检查网络连接"
+    red "所有下载源都失败了"
+
+    # 尝试使用 Docker 方式（如果可用）
+    if command -v docker &> /dev/null; then
+        yellow "尝试使用 Docker 运行 MTG..."
+        export PORT=${PORT:-$(shuf -i 2000-10000 -n 1)}
+
+        docker run -d --name mtg \
+            --restart=unless-stopped \
+            -p $PORT:3128 \
+            nineseconds/mtg:latest \
+            run $SECRET
+
+        if [ $? -eq 0 ]; then
+            green "Docker 方式启动成功"
+            show_link
+            exit 0
+        fi
+    fi
+
+    red "安装失败，请尝试以下方案："
+    yellow "1. 手动下载: wget https://github.com/9seconds/mtg/releases/download/v2.1.8/mtg-linux-$arch -O ~/mtp/mtg"
+    yellow "2. 使用 Docker: docker run -d -p PORT:3128 nineseconds/mtg:latest run SECRET"
+    yellow "3. 从源码编译: https://github.com/9seconds/mtg"
     exit 1
 fi
 
 export PORT=${PORT:-$(shuf -i 2000-10000 -n 1)}
 export MTP_PORT=$(($PORT + 1))
 
-if [ -e "${WORKDIR}/mtg" ]; then
-    cd ${WORKDIR} && chmod +x mtg
+cd ${WORKDIR}
+nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
+sleep 2
 
-    # 检查是否可执行
-    if ! ./mtg --help >/dev/null 2>&1; then
-        red "mtg 二进制文件无法执行，可能架构不匹配"
-        exit 1
-    fi
-
-    nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
-    sleep 2
-
-    if pgrep -x mtg > /dev/null; then
-        green "MTG 代理启动成功"
-    else
-        red "MTG 代理启动失败，请检查日志"
-        exit 1
-    fi
+if pgrep -x mtg > /dev/null; then
+    green "MTG 代理启动成功"
+else
+    red "MTG 代理启动失败"
+    yellow "尝试查看错误信息..."
+    ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT 2>&1 | head -20
+    exit 1
 fi
 }
 
