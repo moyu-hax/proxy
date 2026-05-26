@@ -50,7 +50,13 @@ else
 fi
 
 WORKDIR="$HOME/mtp" && mkdir -p "$WORKDIR"
-pgrep -x mtg > /dev/null && pkill -9 mtg >/dev/null 2>&1
+
+# 清理旧的 MTG 进程
+if pgrep -f "mtg run" > /dev/null; then
+    yellow "检测到旧的 MTG 进程，正在清理..."
+    pkill -9 -f "mtg run" >/dev/null 2>&1
+    sleep 1
+fi
 
 check_port () {
   port_list=$(devil port list)
@@ -243,6 +249,46 @@ if [ "$download_success" = false ]; then
 fi
 
 export PORT=${PORT:-$(shuf -i 2000-10000 -n 1)}
+
+# 检查端口是否被占用
+check_port_usage() {
+    local port=$1
+    if netstat -tuln 2>/dev/null | grep -q ":$port " || ss -tuln 2>/dev/null | grep -q ":$port "; then
+        return 0  # 端口被占用
+    else
+        return 1  # 端口可用
+    fi
+}
+
+# 如果指定的端口被占用，尝试清理或使用其他端口
+if check_port_usage $PORT; then
+    yellow "端口 $PORT 已被占用，尝试清理..."
+
+    # 尝试找出占用进程
+    occupier=$(netstat -tulnp 2>/dev/null | grep ":$PORT " | awk '{print $7}' | head -1)
+    if [[ -n "$occupier" ]]; then
+        yellow "占用进程: $occupier"
+
+        # 如果是 mtg 进程，尝试清理
+        if echo "$occupier" | grep -q "mtg"; then
+            pkill -9 -f "mtg run" >/dev/null 2>&1
+            sleep 2
+
+            if check_port_usage $PORT; then
+                red "端口清理失败，请手动执行: pkill -9 -f 'mtg run' 或使用其他端口"
+                exit 1
+            else
+                green "端口已清理"
+            fi
+        else
+            red "端口被其他程序占用，请更换端口"
+            yellow "提示: PORT=其他端口 bash mtp.sh"
+            exit 1
+        fi
+    fi
+fi
+
+green "使用代理端口: $PORT"
 
 # 查找可用的统计端口
 find_available_port() {
