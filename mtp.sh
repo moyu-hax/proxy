@@ -243,7 +243,23 @@ if [ "$download_success" = false ]; then
 fi
 
 export PORT=${PORT:-$(shuf -i 2000-10000 -n 1)}
-export MTP_PORT=$(($PORT + 1))
+
+# 查找可用的统计端口
+find_available_port() {
+    local start_port=$1
+    local max_attempts=50
+    for ((i=0; i<max_attempts; i++)); do
+        local test_port=$((start_port + i))
+        if ! netstat -tuln 2>/dev/null | grep -q ":$test_port " && ! ss -tuln 2>/dev/null | grep -q ":$test_port "; then
+            echo $test_port
+            return 0
+        fi
+    done
+    echo $((start_port + RANDOM % 1000))
+}
+
+export MTP_PORT=$(find_available_port $((PORT + 1)))
+green "使用统计端口: $MTP_PORT"
 
 cd ${WORKDIR}
 nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
