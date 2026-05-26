@@ -247,31 +247,47 @@ export PORT=${PORT:-$(shuf -i 2000-10000 -n 1)}
 # 查找可用的统计端口
 find_available_port() {
     local start_port=$1
-    local max_attempts=50
+    local max_attempts=100
     for ((i=0; i<max_attempts; i++)); do
         local test_port=$((start_port + i))
-        if ! netstat -tuln 2>/dev/null | grep -q ":$test_port " && ! ss -tuln 2>/dev/null | grep -q ":$test_port "; then
+        # 尝试绑定端口来测试是否可用
+        if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/$test_port" 2>/dev/null; then
+            continue  # 端口被占用
+        else
             echo $test_port
             return 0
         fi
     done
-    echo $((start_port + RANDOM % 1000))
+    # 如果都失败，使用随机端口
+    echo $((10000 + RANDOM % 20000))
 }
 
 export MTP_PORT=$(find_available_port $((PORT + 1)))
 green "使用统计端口: $MTP_PORT"
 
 cd ${WORKDIR}
-nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
-sleep 2
+
+# 先尝试不带统计服务器启动（更稳定）
+yellow "尝试启动 MTG 代理..."
+nohup ./mtg run -b 0.0.0.0:$PORT $SECRET >/dev/null 2>&1 &
+sleep 3
 
 if pgrep -x mtg > /dev/null; then
-    green "MTG 代理启动成功"
+    green "MTG 代理启动成功（无统计功能）"
 else
-    red "MTG 代理启动失败"
-    yellow "尝试查看错误信息..."
-    ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT 2>&1 | head -20
-    exit 1
+    # 如果失败，尝试带统计服务器
+    yellow "尝试带统计功能启动..."
+    nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
+    sleep 3
+
+    if pgrep -x mtg > /dev/null; then
+        green "MTG 代理启动成功（带统计功能）"
+    else
+        red "MTG 代理启动失败"
+        yellow "尝试查看错误信息..."
+        ./mtg run -b 0.0.0.0:$PORT $SECRET 2>&1 | head -20
+        exit 1
+    fi
 fi
 }
 
