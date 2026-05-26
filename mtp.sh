@@ -269,25 +269,24 @@ cd ${WORKDIR}
 
 # 先尝试不带统计服务器启动（更稳定）
 yellow "尝试启动 MTG 代理..."
-nohup ./mtg run -b 0.0.0.0:$PORT $SECRET >/dev/null 2>&1 &
+nohup ./mtg run -b 0.0.0.0:$PORT $SECRET >mtg.log 2>&1 &
+MTG_PID=$!
 sleep 3
 
-if pgrep -x mtg > /dev/null; then
-    green "MTG 代理启动成功（无统计功能）"
-else
-    # 如果失败，尝试带统计服务器
-    yellow "尝试带统计功能启动..."
-    nohup ./mtg run -b 0.0.0.0:$PORT $SECRET --stats-bind=127.0.0.1:$MTP_PORT >/dev/null 2>&1 &
-    sleep 3
-
-    if pgrep -x mtg > /dev/null; then
-        green "MTG 代理启动成功（带统计功能）"
+# 检查进程是否还在运行
+if kill -0 $MTG_PID 2>/dev/null; then
+    green "MTG 代理启动成功（PID: $MTG_PID）"
+    # 验证端口是否监听
+    if netstat -tuln 2>/dev/null | grep -q ":$PORT " || ss -tuln 2>/dev/null | grep -q ":$PORT "; then
+        green "端口 $PORT 已成功监听"
     else
-        red "MTG 代理启动失败"
-        yellow "尝试查看错误信息..."
-        ./mtg run -b 0.0.0.0:$PORT $SECRET 2>&1 | head -20
-        exit 1
+        yellow "警告：进程运行中但端口未监听，请检查日志"
     fi
+else
+    red "MTG 代理启动失败"
+    yellow "查看日志信息："
+    cat mtg.log
+    exit 1
 fi
 }
 
